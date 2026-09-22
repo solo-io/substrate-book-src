@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Repo Workbench</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090d12;
+      --panel: #111923;
+      --panel-2: #0c131c;
+      --line: #263445;
+      --text: #e8eef6;
+      --muted: #91a0b4;
+      --accent: #7dd3fc;
+      --blue: #38bdf8;
+      --green: #86efac;
+      --amber: #fcd34d;
+      --red: #fca5a5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 10% 0%, #17243a 0, var(--bg) 34rem);
+      color: var(--text);
+      font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+    }
+    button { font: inherit; }
+    header { max-width: 1540px; margin: 0 auto; padding: 28px 28px 18px; }
+    h1 { margin: 0 0 4px; font-size: clamp(28px, 4vw, 42px); letter-spacing: -.04em; }
+    header p { max-width: 820px; margin: 0; color: var(--muted); }
+    .layout {
+      max-width: 1540px;
+      margin: 0 auto;
+      padding: 0 28px 40px;
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 16px;
+    }
+    .panel {
+      background: rgba(17, 25, 35, .95);
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      overflow: hidden;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, .22);
+    }
+    .panel-head {
+      min-height: 58px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .panel-head h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+    .button, button {
+      border: 1px solid #36516d;
+      background: #173650;
+      color: #e7f7ff;
+      border-radius: 9px;
+      padding: 8px 11px;
+      font-weight: 680;
+      cursor: pointer;
+    }
+    button.secondary { background: transparent; border-color: var(--line); color: var(--muted); }
+    button.danger { background: transparent; border-color: #683b45; color: var(--red); }
+    button:disabled { opacity: .45; cursor: wait; }
+    .runs { min-height: 680px; }
+    .run-list { padding: 8px; display: grid; gap: 6px; }
+    .run {
+      width: 100%;
+      padding: 11px;
+      border-color: transparent;
+      background: transparent;
+      text-align: left;
+      color: var(--text);
+      display: grid;
+      gap: 5px;
+    }
+    .run:hover, .run.selected { background: #182433; border-color: var(--line); }
+    .run-name { font: 650 13px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .run-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+    .status { display: inline-flex; align-items: center; gap: 6px; }
+    .status::before { content: ""; width: 7px; height: 7px; border-radius: 999px; background: var(--muted); }
+    .status.running::before { background: var(--green); box-shadow: 0 0 0 3px rgba(134, 239, 172, .12); }
+    .status.suspended::before { background: var(--amber); }
+    .status.local::before { background: var(--blue); }
+    .empty-runs, .empty-detail { padding: 34px 20px; color: var(--muted); text-align: center; }
+    .notice { margin: 8px; padding: 10px; border: 1px solid #36516d; background: #10283a; border-radius: 9px; color: #c8eeff; font-size: 12px; }
+    .detail { min-width: 0; }
+    .detail-placeholder { min-height: 680px; display: grid; place-items: center; }
+    .detail-placeholder > div { max-width: 460px; padding: 30px; text-align: center; color: var(--muted); }
+    .detail-placeholder h2 { color: var(--text); margin: 0 0 7px; }
+    .run-header { padding: 17px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .run-header h2 { margin: 0 0 4px; font: 700 19px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .subtle { color: var(--muted); font-size: 12px; }
+    .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+    .summary { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+    .task { margin: 0 0 12px; color: var(--muted); }
+    .task strong { color: var(--text); }
+    .badges { display: flex; flex-wrap: wrap; gap: 7px; }
+    .badge { border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px; padding: 5px 9px; color: var(--muted); font-size: 12px; }
+    .badge strong { color: var(--text); }
+    .stepper { display: grid; grid-template-columns: repeat(7, minmax(90px, 1fr)); gap: 7px; padding: 14px 18px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+    .step { min-width: 90px; padding: 9px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: var(--panel-2); font-size: 11px; }
+    .step strong { display: block; color: inherit; font-size: 12px; margin-bottom: 2px; }
+    .step.complete { border-color: #28563d; color: var(--green); }
+    .step.next { border-color: #38617a; background: #10283a; color: var(--accent); }
+    .step.failed { border-color: #683b45; color: var(--red); }
+    .workspace-grid { display: grid; grid-template-columns: minmax(360px, .95fr) minmax(440px, 1.05fr); }
+    .transcript-panel { border-right: 1px solid var(--line); min-width: 0; }
+    .section-title { height: 48px; padding: 13px 15px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    #transcript { height: 545px; overflow: auto; padding: 12px; }
+    .event { border-left: 3px solid #475569; margin: 0 0 10px; padding: 9px 11px; background: #0b121a; border-radius: 0 9px 9px 0; }
+    .event.agent { border-color: var(--accent); }
+    .event.tool { border-color: var(--amber); }
+    .event.error { border-color: var(--red); }
+    .event .meta { color: var(--muted); font-size: 11px; display: flex; justify-content: space-between; gap: 8px; }
+    .event h3 { margin: 3px 0 6px; font-size: 14px; }
+    pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.48 ui-monospace, SFMono-Regular, Menlo, monospace; color: #cbd5e1; }
+    .repository { min-width: 0; }
+    .repo-body { height: 545px; display: grid; grid-template-columns: 190px minmax(0, 1fr); }
+    .file-tree { border-right: 1px solid var(--line); padding: 8px; overflow: auto; background: #0b121a; }
+    .file {
+      width: 100%;
+      padding: 7px 8px;
+      border-color: transparent;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+      overflow-wrap: anywhere;
+    }
+    .file:hover, .file.selected { background: #182433; color: var(--text); }
+    .file.added::after { content: " A"; color: var(--green); }
+    .file.modified::after { content: " M"; color: var(--amber); }
+    .viewer { min-width: 0; display: grid; grid-template-rows: auto 1fr; }
+    .tabs { display: flex; gap: 3px; padding: 8px; border-bottom: 1px solid var(--line); }
+    .tabs button { background: transparent; border-color: transparent; color: var(--muted); padding: 6px 9px; }
+    .tabs button.active { background: #1b2837; color: var(--text); border-color: var(--line); }
+    #code { padding: 14px; overflow: auto; background: #080e15; }
+    .error-banner { margin: 12px 18px 0; padding: 10px 12px; border: 1px solid #683b45; background: #2b151b; color: var(--red); border-radius: 9px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 1050px) {
+      .layout { grid-template-columns: 1fr; }
+      .runs { min-height: auto; }
+      .run-list { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+      .workspace-grid { grid-template-columns: 1fr; }
+      .transcript-panel { border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+    @media (max-width: 680px) {
+      header, .layout { padding-left: 14px; padding-right: 14px; }
+      .run-header { display: grid; }
+      .actions { justify-content: flex-start; }
+      .repo-body { grid-template-columns: 1fr; height: auto; }
+      .file-tree { border-right: 0; border-bottom: 1px solid var(--line); max-height: 180px; }
+      #code { min-height: 400px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Repo Workbench</h1>
+    <p>Create independent repository task runs. Each run is one stateful Substrate Actor with its own workflow position, transcript, and durable filesystem.</p>
+  </header>
+
+  <div class="layout">
+    <aside class="panel runs">
+      <div class="panel-head">
+        <h2>Repository runs</h2>
+        <div class="actions">
+          <button id="refresh-runs" class="secondary">Refresh</button>
+          <button id="new-run">New run</button>
+        </div>
+      </div>
+      <div id="notice" class="notice" hidden></div>
+      <div id="run-list" class="run-list"></div>
+      <div id="empty-runs" class="empty-runs" hidden>No Actors yet. Create the first repository run.</div>
+    </aside>
+
+    <main class="panel detail">
+      <section id="placeholder" class="detail-placeholder">
+        <div>
+          <h2>Select a repository run</h2>
+          <p>The list comes from the Substrate control plane and does not wake suspended Actors. Opening a run explicitly resumes it through AgentGateway.</p>
+        </div>
+      </section>
+
+      <section id="run-detail" hidden>
+        <div class="run-header">
+          <div>
+            <h2 id="actor-name"></h2>
+            <div id="actor-identity" class="subtle"></div>
+          </div>
+          <div class="actions">
+            <button id="next-step">Next step</button>
+            <button id="fast-forward" class="secondary">Fast-forward</button>
+            <button id="suspend" class="secondary">Suspend</button>
+            <button id="delete" class="danger">Delete</button>
+          </div>
+        </div>
+        <div id="error" class="error-banner" hidden></div>
+        <div class="summary">
+          <p class="task"><strong>Task:</strong> <span id="task"></span></p>
+          <div class="badges">
+            <span class="badge">Lifecycle <strong id="lifecycle"></strong></span>
+            <span class="badge">Task state <strong id="phase"></strong></span>
+            <span class="badge">Progress <strong id="progress"></strong></span>
+            <span class="badge">State revision <strong id="revision"></strong></span>
+          </div>
+        </div>
+        <div id="stepper" class="stepper"></div>
+        <div class="workspace-grid">
+          <section class="transcript-panel">
+            <div class="section-title">Actor transcript</div>
+            <div id="transcript"></div>
+          </section>
+          <section class="repository">
+            <div class="section-title">Durable repository workspace</div>
+            <div class="repo-body">
+              <div id="file-tree" class="file-tree"></div>
+              <div class="viewer">
+                <div class="tabs">
+                  <button data-view="file" class="active">File</button>
+                  <button data-view="diff">Git diff</button>
+                  <button data-view="tests">Tests</button>
+                </div>
+                <pre id="code"></pre>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let actors = [];
+    let selectedName = null;
+    let detail = null;
+    let selectedFile = null;
+    let view = "file";
+    let busy = false;
+
+    const el = id => document.getElementById(id);
+
+    async function request(path, options = {}) {
+      const response = await fetch(path, {cache: "no-store", ...options});
+      let body = {};
+      try { body = await response.json(); } catch (_) {}
+      if (!response.ok) throw new Error(body.error || `Request failed with status ${response.status}`);
+      return body;
+    }
+
+    function selectedActor() {
+      return actors.find(actor => actor.name === selectedName) || null;
+    }
+
+    function showNotice(message) {
+      el("notice").textContent = message;
+      el("notice").hidden = !message;
+    }
+
+    function showError(message) {
+      el("error").textContent = message || "";
+      el("error").hidden = !message;
+    }
+
+    async function loadActors() {
+      const body = await request("/api/actors");
+      actors = body.actors;
+      if (selectedName && !actors.some(actor => actor.name === selectedName)) {
+        selectedName = null;
+        detail = null;
+      }
+      render();
+    }
+
+    async function createRun() {
+      if (busy) return;
+      busy = true;
+      render();
+      showNotice("");
+      try {
+        const body = await request("/api/actors", {method: "POST"});
+        selectedName = null;
+        detail = null;
+        await loadActors();
+        showNotice(`${body.actor.name} was created suspended. Select it to resume and inspect the ready task.`);
+      } catch (error) {
+        showNotice(error.message);
+      } finally {
+        busy = false;
+        render();
+      }
+    }
+
+    async function openActor(name) {
+      if (busy) return;
+      selectedName = name;
+      detail = null;
+      selectedFile = null;
+      view = "file";
+      busy = true;
+      showNotice("");
+      showError("");
+      render();
+      try {
+        detail = await request(`/api/actors/${encodeURIComponent(name)}/state`);
+        selectedFile = detail.files.find(file => file.path === "src/slugify.py")?.path || detail.files[0]?.path || null;
+        await loadActors();
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        busy = false;
+        render();
+      }
+    }
+
+    async function actorAction(action) {
+      if (busy || !selectedName || !detail) return;
+      busy = true;
+      showError("");
+      render();
+      try {
+        detail = await request(`/api/actors/${encodeURIComponent(selectedName)}/${action}`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({expectedStep: detail.currentStep}),
+        });
+        if (!detail.files.some(file => file.path === selectedFile)) {
+          selectedFile = detail.files[0]?.path || null;
+        }
+        await loadActors();
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        busy = false;
+        render();
+      }
+    }
+
+    async function suspendActor() {
+      if (busy || !selectedName) return;
+      busy = true;
+      showError("");
+      render();
+      try {
+        await request(`/api/actors/${encodeURIComponent(selectedName)}/suspend`, {method: "POST"});
+        await loadActors();
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        busy = false;
+        render();
+      }
+    }
+
+    async function deleteActor() {
+      if (busy || !selectedName) return;
+      if (!confirm(`Delete ${selectedName} and its repository state?`)) return;
+      busy = true;
+      render();
+      try {
+        await request(`/api/actors/${encodeURIComponent(selectedName)}`, {method: "DELETE"});
+        selectedName = null;
+        detail = null;
+        selectedFile = null;
+        await loadActors();
+        showNotice("Actor deleted.");
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        busy = false;
+        render();
+      }
+    }
+
+    function renderActorList() {
+      const list = el("run-list");
+      list.replaceChildren(...actors.map(actor => {
+        const button = document.createElement("button");
+        button.className = `run ${actor.name === selectedName ? "selected" : ""}`;
+        button.addEventListener("click", () => openActor(actor.name));
+        const name = document.createElement("span");
+        name.className = "run-name";
+        name.textContent = actor.name;
+        const meta = document.createElement("span");
+        meta.className = "run-meta";
+        const status = document.createElement("span");
+        status.className = `status ${actor.lifecycle}`;
+        status.textContent = actor.lifecycle;
+        const version = document.createElement("span");
+        version.textContent = actor.version === "local" ? "" : `v${actor.version}`;
+        meta.append(status, version);
+        button.append(name, meta);
+        return button;
+      }));
+      el("empty-runs").hidden = actors.length !== 0;
+      el("new-run").disabled = busy;
+      el("refresh-runs").disabled = busy;
+    }
+
+    function renderDetail() {
+      const actor = selectedActor();
+      el("placeholder").hidden = Boolean(actor);
+      el("run-detail").hidden = !actor;
+      if (!actor) return;
+
+      el("actor-name").textContent = actor.name;
+      el("actor-identity").textContent = `${actor.atespace}/${actor.name} · template ${actor.template}`;
+      el("lifecycle").textContent = actor.lifecycle;
+
+      if (!detail) {
+        el("task").textContent = busy ? "Resuming Actor and loading task state…" : "Task state unavailable.";
+        el("phase").textContent = busy ? "loading" : "unknown";
+        el("progress").textContent = "—";
+        el("revision").textContent = "—";
+        el("stepper").replaceChildren();
+        el("transcript").replaceChildren();
+        el("file-tree").replaceChildren();
+        el("code").textContent = "";
+      } else {
+        el("task").textContent = detail.task;
+        el("phase").textContent = detail.phase;
+        el("progress").textContent = `${detail.currentStep} of ${detail.totalSteps}`;
+        el("revision").textContent = detail.stateRevision;
+        renderSteps();
+        renderTranscript();
+        renderFiles();
+      }
+
+      const terminal = !detail || detail.phase === "done" || detail.phase === "failed";
+      el("next-step").disabled = busy || terminal;
+      el("fast-forward").disabled = busy || terminal;
+      el("suspend").disabled = busy || actor.lifecycle === "suspended" || actor.lifecycle === "local";
+      el("delete").disabled = busy || actor.lifecycle === "local";
+      el("next-step").textContent = actor.lifecycle === "suspended" ? "Resume & next step" : "Next step";
+    }
+
+    function renderSteps() {
+      el("stepper").replaceChildren(...detail.steps.map(step => {
+        const item = document.createElement("div");
+        item.className = `step ${step.status}`;
+        const number = document.createElement("strong");
+        number.textContent = `Step ${step.number}`;
+        const title = document.createElement("span");
+        title.textContent = step.title;
+        item.append(number, title);
+        return item;
+      }));
+    }
+
+    function renderTranscript() {
+      const transcript = el("transcript");
+      transcript.replaceChildren(...detail.transcript.map(event => {
+        const item = document.createElement("article");
+        item.className = `event ${event.kind}`;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const kind = document.createElement("span");
+        kind.textContent = `${event.sequence}. ${event.kind}`;
+        const time = document.createElement("span");
+        time.textContent = event.time;
+        meta.append(kind, time);
+        const title = document.createElement("h3");
+        title.textContent = event.title;
+        const body = document.createElement("pre");
+        body.textContent = event.body;
+        item.append(meta, title, body);
+        return item;
+      }));
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    function renderFiles() {
+      const tree = el("file-tree");
+      tree.replaceChildren(...detail.files.map(file => {
+        const button = document.createElement("button");
+        button.className = `file ${file.status} ${file.path === selectedFile ? "selected" : ""}`;
+        button.textContent = file.path;
+        button.addEventListener("click", () => {
+          selectedFile = file.path;
+          view = "file";
+          renderFiles();
+          renderTabs();
+          renderCode();
+        });
+        return button;
+      }));
+      renderTabs();
+      renderCode();
+    }
+
+    function renderTabs() {
+      document.querySelectorAll("[data-view]").forEach(button => {
+        button.classList.toggle("active", button.dataset.view === view);
+      });
+    }
+
+    function renderCode() {
+      if (!detail) return;
+      if (view === "diff") {
+        el("code").textContent = detail.diff || "No changes yet.";
+      } else if (view === "tests") {
+        el("code").textContent = detail.tests || "Tests have not run yet.";
+      } else {
+        const file = detail.files.find(item => item.path === selectedFile);
+        el("code").textContent = file?.content || "Select a file.";
+      }
+    }
+
+    function render() {
+      renderActorList();
+      renderDetail();
+    }
+
+    el("new-run").addEventListener("click", createRun);
+    el("refresh-runs").addEventListener("click", () => {
+      if (busy) return;
+      busy = true;
+      render();
+      loadActors().catch(error => showNotice(error.message)).finally(() => {
+        busy = false;
+        render();
+      });
+    });
+    el("next-step").addEventListener("click", () => actorAction("advance"));
+    el("fast-forward").addEventListener("click", () => actorAction("fast-forward"));
+    el("suspend").addEventListener("click", suspendActor);
+    el("delete").addEventListener("click", deleteActor);
+    document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => {
+      view = button.dataset.view;
+      renderTabs();
+      renderCode();
+    }));
+
+    loadActors().catch(error => {
+      showNotice(error.message);
+      render();
+    });
+  </script>
+</body>
+</html>

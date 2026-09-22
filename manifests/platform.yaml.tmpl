@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: book-workbench
+
+---
+
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: generic-worker
+  namespace: book-workbench
+  labels:
+    workload: generic-worker
+spec:
+  replicas: 1
+  workerImage: __WORKER_IMAGE__
+  template:
+    nodeSelector:
+      ate.dev/substrate-version: "__SUBSTRATE_VERSION__"
+    resources:
+      limits:
+        cpu: "1"
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 1Gi
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: repo-workbench-webapp
+  namespace: book-workbench
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: repo-workbench-webapp
+rules:
+- apiGroups: ["certificates.k8s.io"]
+  resources: ["clustertrustbundles"]
+  verbs: ["list"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: repo-workbench-webapp
+subjects:
+- kind: ServiceAccount
+  name: repo-workbench-webapp
+  namespace: book-workbench
+roleRef:
+  kind: ClusterRole
+  name: repo-workbench-webapp
+  apiGroup: rbac.authorization.k8s.io
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: repo-workbench-webapp-token
+  namespace: ate-system
+rules:
+- apiGroups: [""]
+  resources: ["serviceaccounts/token"]
+  resourceNames: ["ate-client"]
+  verbs: ["create"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: repo-workbench-webapp-token
+  namespace: ate-system
+subjects:
+- kind: ServiceAccount
+  name: repo-workbench-webapp
+  namespace: book-workbench
+roleRef:
+  kind: Role
+  name: repo-workbench-webapp-token
+  apiGroup: rbac.authorization.k8s.io
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: repo-workbench-webapp
+  namespace: book-workbench
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: repo-workbench-webapp
+  template:
+    metadata:
+      labels:
+        app: repo-workbench-webapp
+    spec:
+      serviceAccountName: repo-workbench-webapp
+      containers:
+      - name: webapp
+        image: __WEBAPP_IMAGE__
+        env:
+        - name: AGENT_URL
+          value: http://atenet-router.ate-system.svc.cluster.local
+        - name: ATE_CLI
+          value: /usr/local/bin/kubectl-ate
+        - name: ATE_ENDPOINT
+          value: api.ate-system.svc:443
+        - name: ATE_KUBECONFIG
+          value: /app/kubeconfig.yaml
+        - name: BOOK_ATESPACE
+          value: book-workbench
+        - name: BOOK_TEMPLATE
+          value: repo-workbench
+        - name: ACTOR_PREFIX
+          value: repo-workbench
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 80
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: repo-workbench-webapp
+  namespace: book-workbench
+spec:
+  selector:
+    app: repo-workbench-webapp
+  ports:
+  - port: 80
+    targetPort: 80

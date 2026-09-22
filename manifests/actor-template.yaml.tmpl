@@ -1,0 +1,57 @@
+metadata:
+  atespace: book-workbench
+  name: repo-workbench
+workerSelector:
+  matchLabels:
+    workload: generic-worker
+containers:
+- name: agent
+  image: __AGENT_IMAGE__
+  command:
+  - python3
+  - /app/server.py
+  env:
+  - name: PORT
+    value: "80"
+  - name: WORKSPACE_DIR
+    value: /workspace/repository
+  - name: SEED_DIR
+    value: /opt/repo-workbench-seed
+  - name: ACTOR_INFO_DIR
+    value: /run/ate
+  readyz:
+    httpGet:
+      path: /readyz
+      port: 80
+  volumeMounts:
+  - name: workspace
+    mountPath: /workspace
+  - name: actor-info
+    mountPath: /run/ate
+resources:
+  limits:
+  - name: cpu
+    quantity: "1"
+  - name: memory
+    quantity: 512Mi
+snapshotsConfig:
+  onPause: SNAPSHOT_CONTENT_SCOPE_FULL
+  onCommit: SNAPSHOT_CONTENT_SCOPE_FULL
+  storageLocation: gs://ate-snapshots/book-workbench/
+sandboxConfig:
+  sandboxClass: SANDBOX_CLASS_GVISOR
+  configName: gvisor-default
+volumes:
+- name: workspace
+  durableDir: {}
+- name: actor-info
+  systemInfo:
+    dataSources:
+    - actorMetadata:
+        items:
+        - field: ACTOR_METADATA_FIELD_NAME
+          path: actor-name
+        - field: ACTOR_METADATA_FIELD_ATESPACE
+          path: atespace
+        - field: ACTOR_METADATA_FIELD_UID
+          path: actor-uid
