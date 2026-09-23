@@ -3,7 +3,8 @@
 set -o errexit -o nounset -o pipefail
 
 BOOK_EXAMPLES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUBSTRATE_SOURCE_DIR="${SUBSTRATE_SOURCE_DIR:-${BOOK_EXAMPLES_ROOT}/../substrate}"
+SUBSTRATE_SOURCE_DIR="${SUBSTRATE_SOURCE_DIR:-${BOOK_EXAMPLES_ROOT}/../substrate-book}"
+SUBSTRATE_SOURCE_COMMIT="${SUBSTRATE_SOURCE_COMMIT:-6338d4008aedebcec2034dff0e042514f663039b}"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-substrate}"
 KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-kind-${KIND_CLUSTER_NAME}}"
 BOOK_ATESPACE="book-workbench"
@@ -21,9 +22,18 @@ require_command() {
 }
 
 require_substrate_source() {
+  require_command git
   if [[ ! -f "${SUBSTRATE_SOURCE_DIR}/go.mod" || ! -x "${SUBSTRATE_SOURCE_DIR}/hack/install-ate-kind.sh" ]]; then
     echo "error: Agent Substrate source not found at ${SUBSTRATE_SOURCE_DIR}" >&2
-    echo "For this pre-release development setup, place this repository beside ./substrate or set SUBSTRATE_SOURCE_DIR." >&2
+    echo "Place this repository beside ./substrate-book or set SUBSTRATE_SOURCE_DIR." >&2
+    exit 1
+  fi
+  local source_commit
+  source_commit="$(git -C "${SUBSTRATE_SOURCE_DIR}" rev-parse HEAD)"
+  if [[ "${source_commit}" != "${SUBSTRATE_SOURCE_COMMIT}" ]]; then
+    echo "error: Agent Substrate source at ${SUBSTRATE_SOURCE_DIR} is ${source_commit}" >&2
+    echo "This example is pinned to ${SUBSTRATE_SOURCE_COMMIT}." >&2
+    echo "Check out that commit or set SUBSTRATE_SOURCE_DIR and SUBSTRATE_SOURCE_COMMIT explicitly." >&2
     exit 1
   fi
 }

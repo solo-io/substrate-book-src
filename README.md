@@ -51,15 +51,15 @@ docs/images/                   Guide diagrams and screenshots
 
 ## Current development setup
 
-The published book will consume a pinned Agent Substrate release. Until that packaging exists, this example builds against a sibling Substrate source checkout:
+This pre-release example builds against a pinned commit in a local Substrate source checkout. The setup does not clone, fetch, or switch that checkout. By default, the repositories are siblings:
 
 ```text
 agent-substrate/
-  substrate/
+  substrate-book/              Substrate source at the pinned commit
   book-src/
 ```
 
-Set `SUBSTRATE_SOURCE_DIR` if the Substrate checkout lives elsewhere.
+The pinned commit is declared in `scripts/lib.sh`. The setup stops with the required commit if the local checkout does not match. Set `SUBSTRATE_SOURCE_DIR` and `SUBSTRATE_SOURCE_COMMIT` together to use another explicitly selected source checkout.
 
 ### Prerequisites
 
