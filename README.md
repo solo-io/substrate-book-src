@@ -22,7 +22,7 @@ The current agent is deterministic rather than model-backed. Readers can therefo
 | Actor instances | `repo-workbench-1`, `repo-workbench-2`, ... | Independent stateful repository task runs |
 | Web application | `repo-workbench-webapp` | Creates, lists, opens, advances, suspends, and deletes runs |
 
-An ActorTemplate is a reusable blueprint. An Actor is one stateful execution created from that blueprint. Several Actors can exist at different workflow steps even when only one Worker is prepared to run them at a time.
+An ActorTemplate is a reusable blueprint. An Actor is one stateful execution created from that blueprint. Several Actors can exist at different workflow steps even when only one Worker is prepared to run them at a time. This example gives the Worker one CPU and each Actor a one-CPU limit, so CPU capacity permits only one running workbench Actor even though the Worker's Actor count limit is higher.
 
 ## What the example demonstrates
 
@@ -90,7 +90,7 @@ The setup script:
 
 It deliberately creates no repository-run Actor. The first Actor is created from the browser.
 
-Use a clean cluster when needed:
+Use a clean cluster when rerunning setup after the ActorTemplate has been created:
 
 ```shell
 ./scripts/setup-kind.sh --recreate
