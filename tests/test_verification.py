@@ -25,6 +25,13 @@ class VerificationTest(unittest.TestCase):
         self.assertTrue(changed.endswith("other:\n  keep: true\n"))
         self.assertNotIn("requestParking", original)
 
+    def test_explicit_resume_uses_the_lab_cli_context(self):
+        with patch.object(verify_deployed, "run_command") as command:
+            verify_deployed.resume("repo-workbench-1")
+        command.assert_called_once_with(str(verify_deployed.ROOT / ".bin/kubectl-ate"),
+                                        "--context", verify_deployed.CONTEXT,
+                                        "resume", "actor", "repo-workbench-1", "-a", "book-workbench")
+
     def test_negative_command_assertion_rejects_unexpected_success(self):
         with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess(["cli"], 0, "", "")):
             with self.assertRaisesRegex(RuntimeError, "unexpectedly succeeded"):

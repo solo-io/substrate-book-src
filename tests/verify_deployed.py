@@ -77,6 +77,12 @@ def actor(name):
     return ate("get", "actor", name, "-a", NAMESPACE)
 
 
+def resume(name):
+    # Match the book's explicit lifecycle commands before application requests.
+    run_command(str(ROOT / ".bin/kubectl-ate"), "--context", CONTEXT,
+                "resume", "actor", name, "-a", NAMESPACE)
+
+
 def suspend(name):
     request(f"/api/actors/{name}/suspend", "POST")
     deadline = time.monotonic() + 120
@@ -110,6 +116,7 @@ def main():
         print("PASS: creating and listing two Actors leaves them suspended", flush=True)
 
         path = f"/api/actors/{first}"
+        resume(first)
         first_state = request(path + "/state")
         check(first_state["currentStep"] == 0, "first Actor did not start fresh")
         check(first_state["actor"]["name"] == first and first_state["actor"]["atespace"] == NAMESPACE,
@@ -129,6 +136,7 @@ def main():
         suspend(first)
         print("PASS: repair and report persist at step five; stale requests return 409; suspend releases assignment", flush=True)
 
+        resume(second)
         second_state = request(f"/api/actors/{second}/state")
         check(second_state["currentStep"] == 0, "second Actor inherited first Actor state")
         check(second_state["actor"]["name"] == second and
@@ -142,6 +150,7 @@ def main():
         check(worker_pod() == original_worker, "Worker Pod was replaced")
         print("PASS: the second Actor has independent state and reuses the same Worker Pod", flush=True)
 
+        resume(first)
         restored = request(path + "/state")
         for key in ("actor", "currentStep", "stateRevision", "transcript", "tests", "files", "diff"):
             check(restored[key] == first_state[key], f"{key} changed across suspend/resume")

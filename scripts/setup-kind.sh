@@ -80,7 +80,7 @@ EOF
 helm upgrade --install substrate "${SUBSTRATE_CHART_DIR}/substrate-${SUBSTRATE_CHART_VERSION}.tgz" \
   --kube-context "${KUBECTL_CONTEXT}" --namespace ate-system \
   -f "${BOOK_EXAMPLES_ROOT}/manifests/substrate-values.yaml" \
-  --post-renderer "${BOOK_EXAMPLES_ROOT}/scripts/pin-images.sh" --wait --timeout 10m
+  --post-renderer "${BOOK_EXAMPLES_ROOT}/scripts/pin-images.sh" --wait --timeout 20m
 configure_api_dns
 
 for deployment in atenet-router atenet-egress; do

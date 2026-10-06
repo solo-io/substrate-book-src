@@ -4,3 +4,9 @@
 atelet:
   extraArgs:
   - --localhost-registry-replacement=kind-registry:5000
+
+# The single-user lab must fit alongside Kubernetes on a two-CPU CI runner.
+postgres:
+  resources:
+    requests:
+      cpu: 100m

@@ -137,6 +137,7 @@ exit 1
         cli.write_text(CLI)
         cli.chmod(0o755)
         self.write_command("docker", "#!/bin/sh\nexit 98\n")
+        self.write_command("kubectl", "#!/bin/sh\nexit 98\n")
         result = self.run_script("deploy-example.sh", env=dict(self.env, BOOK_AGENT_IMAGE="agent:tag"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("set BOOK_AGENT_IMAGE and BOOK_WEBAPP_IMAGE together", result.stderr)
