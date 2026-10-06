@@ -16,8 +16,6 @@ spec:
   replicas: 1
   workerImage: __WORKER_IMAGE__
   template:
-    nodeSelector:
-      ate.dev/substrate-version: "__SUBSTRATE_VERSION__"
     resources:
       limits:
         cpu: "1"
@@ -107,6 +105,10 @@ spec:
         app: repo-workbench-webapp
     spec:
       serviceAccountName: repo-workbench-webapp
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "4"
       containers:
       - name: webapp
         image: __WEBAPP_IMAGE__

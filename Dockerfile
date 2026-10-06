@@ -19,6 +19,7 @@ EXPOSE 80
 CMD ["python3", "/app/server.py"]
 
 FROM python:3.13-slim AS webapp
+ARG TARGETARCH
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
@@ -27,7 +28,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY webapp/server.py webapp/index.html webapp/kubeconfig.yaml /app/
-COPY .bin/kubectl-ate-linux /usr/local/bin/kubectl-ate
+COPY .bin/kubectl-ate-linux-${TARGETARCH} /usr/local/bin/kubectl-ate
 
 ENV PORT=80 \
     AGENT_URL=http://atenet-router.ate-system.svc.cluster.local \

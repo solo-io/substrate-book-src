@@ -1,7 +1,10 @@
 .git
 .bin/*
-!.bin/kubectl-ate-linux
+!.bin/kubectl-ate-linux-*
 .cache
 .rendered
 **/__pycache__
 **/*.pyc
+
+.test-results/
+.ci-tools/

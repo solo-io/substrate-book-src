@@ -49,25 +49,35 @@ tests/                         Agent and web-application tests
 docs/images/                   Guide diagrams and screenshots
 ```
 
-## Current development setup
+## Set up the published Substrate runtime
 
-This pre-release example builds against a pinned commit in a local Substrate source checkout. The setup does not clone, fetch, or switch that checkout. By default, the repositories are siblings:
+This example uses the [kagent-dev distribution of Agent Substrate v0.4.0-alpha1](https://github.com/kagent-dev/substrate/releases/tag/v0.4.0-alpha1). The reason we use these builds is because the upstream Substrate does not (at the time of writing) publish binary artifacts (just source). When a viable binary release is available, we'll update.
 
-```text
-agent-substrate/
-  substrate-book/              Substrate source at the pinned commit
-  book-src/
-```
+Setup downloads its released `kubectl-ate` binaries and the published `substrate-crds` and `substrate` Helm chart packages, verifies their SHA-256 checksums, and installs the verified packages. All platform container images, including the matching gVisor Worker, are pinned by digest. No Substrate source checkout, Go compiler, or runtime image build is required. This distribution has its own release history; it is not the upstream v0.3.0 release.
 
-The pinned commit is declared in `scripts/lib.sh`. The setup stops with the required commit if the local checkout does not match. Set `SUBSTRATE_SOURCE_DIR` and `SUBSTRATE_SOURCE_COMMIT` together to use another explicitly selected source checkout.
+Run the commands below from this companion repository. The version is declared in `scripts/lib.sh`; the binary checksums are in `scripts/cli-checksums.json`, and the chart checksums and image digests are in `scripts/runtime-lock.json`. Setup creates the local certificate and signing-key material that the platform charts require, configures API authentication, and waits for the platform before deploying the example.
+
+The two **companion demo images** are still built locally with Docker: the repository worker and its web application. Publishing these for AMD64 and ARM64 is a follow-up task; Substrate, its Worker, and both CLI binaries already come from the public kagent-dev release. The local demo images are pushed to `localhost:5001`, and their deployment references use digests. No cloud account or private registry credentials are required.
 
 ### Prerequisites
 
 - Docker with the daemon running
-- Git
-- Go 1.27 or newer, matching the current Substrate source tree
-- `kubectl`
-- `jq`
+- Git to obtain this companion repository
+- [kind](https://kind.sigs.k8s.io/docs/user/quick-start/), [Helm](https://helm.sh/docs/intro/install/), and `kubectl`
+- `curl`, `jq`, `openssl`, and `shasum`
+- Internet access for release binaries, charts, container images, and gVisor assets
+
+Setup creates a single-node Kubernetes 1.35.0 kind cluster with the certificate feature gates and API Substrate requires. The cluster uses gVisor and does not require `/dev/kvm`. On Windows, run the lab in WSL2 with Docker Desktop integration enabled. Python 3 and Git are also needed for local mode and the verification commands, but the deployed application includes its own Python runtime.
+
+To download the CLI binaries without creating a cluster:
+
+```shell
+./scripts/download-cli.sh
+```
+
+The host binary is installed at `.bin/kubectl-ate`. A matching Linux binary is downloaded for the demo web application. `--linux-all` downloads both Linux architectures when preparing multi-platform demo builds. Cached binaries are checked before reuse. The old `download-substrate.sh` entry point now forwards to this command and does not download source.
+
+To download and verify the chart packages without creating a cluster, run `./scripts/download-charts.sh`. Setup performs this step automatically and checks cached packages before reuse. A changed chart package is rejected before cluster creation or installation. The Helm post-renderer replaces the chart's image tags with locked digests and rejects images absent from the lock file.
 
 ## Walk through Repo Workbench
 
@@ -79,27 +89,33 @@ Run all commands below from this repository.
 ./scripts/setup-kind.sh
 ```
 
+Keep Docker running and wait for **Setup complete**. The first run downloads the runtime images and builds the two companion images; later builds reuse Docker’s cache.
+
 The setup script:
 
-1. Creates or reuses the `kind-substrate` Kubernetes context.
-2. Installs Substrate with AgentGateway as its ingress and egress data plane.
-3. Builds the agent, web application, Linux `kubectl-ate` client, and matching gVisor Worker image.
-4. Creates the `generic-worker` WorkerPool and web application.
+1. Downloads and checks the host and Linux `kubectl-ate` binaries for `v0.4.0-alpha1`.
+2. Creates or reuses the `kind-book-workbench` context with the required certificate APIs.
+3. Installs the published Substrate charts, generates the lab's key material, and waits for readiness.
+4. Builds only the agent and web application, then deploys them with one published gVisor Worker.
 5. Creates the `book-workbench` Atespace and `repo-workbench` ActorTemplate.
 6. Waits for the ActorTemplate's golden snapshot.
 
 It deliberately creates no repository-run Actor. The first Actor is created from the browser.
 
-Use a clean cluster when rerunning setup after the ActorTemplate has been created:
+The default cluster name is `book-workbench`, separate from a development cluster named `substrate`. To use another name, export `KIND_CLUSTER_NAME` before running setup and keep that value for the other scripts. The examples below assume `kind-book-workbench` is the current context; select it with `kubectl config use-context kind-book-workbench` if necessary.
+
+Use a clean cluster when rerunning setup after the ActorTemplate has been created. **`--recreate` deletes the named cluster, including its Actors and stored state:**
 
 ```shell
 ./scripts/setup-kind.sh --recreate
 ```
 
-Add the locally built CLI to the current shell:
+Add the downloaded CLI to the current shell and select the lab context:
 
 ```shell
 export PATH="$PWD/.bin:$PATH"
+kubectl config use-context kind-book-workbench
+kubectl ate --version
 ```
 
 ### 2. Inspect the prepared infrastructure
@@ -289,18 +305,52 @@ Open [http://localhost:8080](http://localhost:8080), select the local run, and a
 python3 -m unittest discover -s tests -v
 ```
 
-The tests cover step-by-step execution, fast-forward equivalence, stale-step conflicts, durable file changes, Actor identity, Actor routing, and control-plane management endpoints.
+The tests cover step-by-step execution, fast-forward equivalence, stale-step conflicts, durable file changes, Actor identity, Actor routing, control-plane management endpoints, verified CLI downloads, lab context isolation, and image-reference validation.
+
+After setup, verify the deployed example on an empty `book-workbench` Atespace:
+
+```shell
+./scripts/verify-example.sh
+```
+
+This verification creates two Actors and exercises the deployed web backend, control plane, and AgentGateway. It checks independent workflow state, stale-request conflicts, one Worker Pod reused by both Actors, full suspend/resume restoration of memory and durable files, and seven-step completion with passing repository tests. It deletes the Actors it created before exiting. It refuses to run when the Atespace already contains Actors.
+
+## Automated lab regression suite
+
+Run a fresh setup, the application/setup tests, the deployed demo verifier, and the Chapter 4–6 regression checks with one command:
+
+```shell
+./scripts/test-lab.sh
+```
+
+The runner selects a unique kind cluster name and refuses to use an existing cluster. It deletes its test resources and cluster on success or failure, restores the previous Kubernetes context, and saves logs under `.test-results/<cluster-name>/`. Set `KIND_CLUSTER_NAME` to choose a new name. `--keep-cluster` retains the disposable lab for a browser check; use `teardown-example.sh` and `delete-kind.sh` with the same name afterward.
+
+The maintained chapter suite checks capacity exhaustion, request parking, Full and Data snapshots, pause/resume, tags, Worker-loss recovery, stable identity, and HTTP policy admission. Its parked-success case temporarily sets a 30-second request budget to accommodate slower test hosts, then restores the original router configuration. The default-budget timeout is checked separately. Browser interaction and outbound enforcement are not part of this suite.
+
+The Linux GitHub Actions workflow runs the same fresh-lab command on `ubuntu-24.04` and retains test logs for seven days. On Linux or WSL2, `./scripts/install-ci-tools.sh` installs checksum-verified kind, kubectl, and Helm into `.ci-tools/bin` when those tools are needed. See [the testing guide](docs/testing.md) for commands and coverage.
 
 ## Clean up
 
-Delete every example Actor, the ActorTemplate, Atespace, and Kubernetes namespace:
+Delete every example Actor, the ActorTemplate, Atespace, and Kubernetes namespace. Teardown waits for the demo Pods to exit and removes their certificate requests before deleting the namespace:
 
 ```shell
 ./scripts/teardown-example.sh
 ```
 
-Delete the entire kind cluster and local registry:
+Delete the named kind cluster:
 
 ```shell
 ./scripts/delete-kind.sh
 ```
+
+The shared `kind-registry` container is retained because other kind clusters may use it. The downloaded CLI binaries remain in the ignored `.bin/` directory for reuse.
+
+## Follow-up: publish the companion images
+
+After validating the published Substrate runtime, publish the agent and web application images for `linux/amd64` and `linux/arm64`. The web application must include the matching released Linux CLI. Pin both published image digests in the companion so that the reader setup no longer builds demo images or needs the local registry.
+
+The deployment script already accepts `BOOK_AGENT_IMAGE` and `BOOK_WEBAPP_IMAGE` together, each as a complete image reference ending in `@sha256:<digest>`. When both are supplied, it skips the demo builds. Until publication, the default uses local Docker builds of these two images only.
+
+## License
+
+This repository is licensed under the [Apache License, Version 2.0](LICENSE).

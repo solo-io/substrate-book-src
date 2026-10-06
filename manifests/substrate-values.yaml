@@ -1,0 +1,6 @@
+# Published Substrate charts already use the public kagent-dev images.
+# scripts/pin-images.sh replaces chart image tags with runtime-lock.json digests.
+# This override lets development demo images use the local kind registry.
+atelet:
+  extraArgs:
+  - --localhost-registry-replacement=kind-registry:5000

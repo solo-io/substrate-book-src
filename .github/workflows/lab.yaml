@@ -1,0 +1,39 @@
+name: Book lab
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: book-lab-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      KIND_CLUSTER_NAME: book-ci
+      LAB_RESULTS_DIR: ${{ github.workspace }}/.test-results/book-ci
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+    - name: Install prerequisites
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq openssl libdigest-sha-perl
+        ./scripts/install-ci-tools.sh
+        echo "$PWD/.ci-tools/bin" >> "$GITHUB_PATH"
+    - name: Fresh setup, regression tests, and cleanup
+      run: ./scripts/test-lab.sh
+    - name: Upload test logs
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: book-lab-linux
+        path: .test-results/book-ci
+        if-no-files-found: warn
+        retention-days: 7
+    - name: Ensure disposable cluster is removed
+      if: always()
+      run: kind delete cluster --name book-ci
