@@ -32,6 +32,20 @@ class VerificationTest(unittest.TestCase):
                                         "--context", verify_deployed.CONTEXT,
                                         "resume", "actor", "repo-workbench-1", "-a", "book-workbench")
 
+    def test_router_config_waits_for_hot_reload_without_restarting_the_pod(self):
+        config = "routes: []\n"
+        responses = [
+            subprocess.CompletedProcess([], 0, "loaded config from File\n", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "loaded config from File\nloaded config from File\n", ""),
+        ]
+        with patch.object(verify_chapters.lab, "run_command", side_effect=responses) as command:
+            verify_chapters.set_router_config(config)
+        calls = [call.args for call in command.call_args_list]
+        self.assertTrue(any("patch" in call for call in calls))
+        self.assertTrue(any("logs" in call for call in calls))
+        self.assertFalse(any("rollout" in call for call in calls))
+
     def test_negative_command_assertion_rejects_unexpected_success(self):
         with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess(["cli"], 0, "", "")):
             with self.assertRaisesRegex(RuntimeError, "unexpectedly succeeded"):

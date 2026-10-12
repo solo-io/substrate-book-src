@@ -3,7 +3,7 @@
 set -o errexit -o nounset -o pipefail
 
 BOOK_EXAMPLES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUBSTRATE_VERSION="v0.4.0-alpha1"
+SUBSTRATE_VERSION="v0.5.0-alpha2"
 SUBSTRATE_CHART_VERSION="${SUBSTRATE_VERSION#v}"
 SUBSTRATE_CHART_REPO="oci://ghcr.io/kagent-dev/substrate/helm"
 SUBSTRATE_CHART_DIR="${BOOK_EXAMPLES_ROOT}/.cache/charts/${SUBSTRATE_CHART_VERSION}"

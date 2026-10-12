@@ -7,6 +7,8 @@ atelet:
 
 # The single-user lab must fit alongside Kubernetes on a two-CPU CI runner.
 postgres:
+  clientCertificates:
+    enabled: true
   resources:
     requests:
       cpu: 100m
