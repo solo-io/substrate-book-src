@@ -4,3 +4,7 @@
 atelet:
   extraArgs:
   - --localhost-registry-replacement=kind-registry:5000
+
+postgres:
+  clientCertificates:
+    enabled: true

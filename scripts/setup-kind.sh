@@ -43,18 +43,42 @@ done
 for namespace in ate-system podcertificate-controller-system; do
   kube create namespace "${namespace}" --dry-run=client -o yaml | kube apply -f -
 done
-# The platform chart owns this namespace, even though bootstrap needs it first.
-kube label namespace podcertificate-controller-system app.kubernetes.io/managed-by=Helm --overwrite >/dev/null
-kube annotate namespace podcertificate-controller-system meta.helm.sh/release-name=substrate meta.helm.sh/release-namespace=ate-system --overwrite >/dev/null
 helm upgrade --install substrate-crds "${SUBSTRATE_CHART_DIR}/substrate-crds-${SUBSTRATE_CHART_VERSION}.tgz" \
   --kube-context "${KUBECTL_CONTEXT}" --namespace ate-system --wait --timeout 5m
 
 # These pools are generated locally; no private keys are shipped in the charts.
-for name in service-dns-ca-pool pod-identity-ca-pool; do
+for name in service-dns-ca-pool pod-identity-ca-pool postgres-ca-pool; do
   if ! kube get secret "${name}" -n podcertificate-controller-system >/dev/null 2>&1; then
     ate admin make-ca-pool --ca-id=1 --name="${name}" --secret-namespace=podcertificate-controller-system
   fi
 done
+
+helm upgrade --install substrate-podcert \
+  "${SUBSTRATE_CHART_DIR}/substrate-podcert-${SUBSTRATE_CHART_VERSION}.tgz" \
+  --kube-context "${KUBECTL_CONTEXT}" --namespace podcertificate-controller-system \
+  --post-renderer "${BOOK_EXAMPLES_ROOT}/scripts/pin-images.sh" --wait --timeout 5m
+kube rollout status deployment/podcertificate-controller \
+  -n podcertificate-controller-system --timeout=180s
+
+wait_for_trust_bundle() {
+  local signer="$1" deadline=$((SECONDS + 120))
+  while ((SECONDS < deadline)); do
+    if kube get clustertrustbundles -o json 2>/dev/null | jq -e --arg signer "${signer}" \
+      '[.items[] | select(.spec.signerName == $signer and .metadata.labels["podcert.ate.dev/canarying"] == "live")] | length > 0' \
+      >/dev/null; then
+      return
+    fi
+    sleep 2
+  done
+  echo "error: timed out waiting for the ${signer} trust bundle" >&2
+  return 1
+}
+for signer in servicedns.podcert.ate.dev/identity podidentity.podcert.ate.dev/identity postgres.podcert.ate.dev/identity; do
+  wait_for_trust_bundle "${signer}"
+done
+
+"${BOOK_EXAMPLES_ROOT}/scripts/setup-postgres.sh"
+
 if ! kube get secret actor-id-jwt-pool -n ate-system >/dev/null 2>&1; then
   ate admin make-jwt-pool --key-id=1 --name=actor-id-jwt-pool --secret-namespace=ate-system
 fi
@@ -83,9 +107,26 @@ helm upgrade --install substrate "${SUBSTRATE_CHART_DIR}/substrate-${SUBSTRATE_C
   --post-renderer "${BOOK_EXAMPLES_ROOT}/scripts/pin-images.sh" --wait --timeout 10m
 configure_api_dns
 
+api_deployment="$(kube get deployment/ate-api-server -n ate-system -o json)"
+if ! jq -e --arg image "${SUBSTRATE_API_IMAGE}" '
+  .spec.template.spec.containers[] | select(.name == "ate-api-server") |
+  (.image == $image) and
+  any(.env[]; .name == "ATE_API_POSTGRES_READ_WRITE_CONNECTION_STRING" and
+      .valueFrom.secretKeyRef.name == "substrate-postgres-readwrite" and
+      .valueFrom.secretKeyRef.key == "readWriteConnectionString") and
+  any(.env[]; .name == "ATE_API_POSTGRES_OWNER_CONNECTION_STRING" and
+      .valueFrom.secretKeyRef.name == "substrate-postgres-owner" and
+      .valueFrom.secretKeyRef.key == "ownerConnectionString") and
+  any(.volumeMounts[]; .mountPath == "/run/postgres.podcert.ate.dev")
+' <<<"${api_deployment}" >/dev/null; then
+  echo "error: ate-api-server does not use the locked image and both PostgreSQL Secrets/certificates" >&2
+  exit 1
+fi
+
 for deployment in atenet-router atenet-egress; do
-  if [[ "$(kube get deploy "${deployment}" -n ate-system -o jsonpath='{.spec.template.spec.containers[?(@.name=="agentgateway")].name}')" != agentgateway ]]; then
-    echo "error: ${deployment} must use AgentGateway" >&2; exit 1
+  containers="$(kube get deploy "${deployment}" -n ate-system -o jsonpath='{.spec.template.spec.containers[*].name}')"
+  if [[ "${containers}" != agentgateway ]]; then
+    echo "error: ${deployment} must contain only AgentGateway, found: ${containers}" >&2; exit 1
   fi
 done
 "${BOOK_EXAMPLES_ROOT}/scripts/deploy-example.sh"

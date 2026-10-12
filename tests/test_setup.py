@@ -11,7 +11,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CLI = '#!/bin/sh\necho "kubectl-ate version v0.4.0-alpha1 commit=test linux/amd64"\n'
+VERSION = json.loads((ROOT / "scripts/runtime-lock.json").read_text())["version"]
+CLI = f'#!/bin/sh\necho "kubectl-ate version {VERSION} commit=test linux/amd64"\n'
 
 
 class SetupTest(unittest.TestCase):
@@ -118,7 +119,7 @@ exit 1
 
     def test_cleanup_removes_workloads_before_certificate_requests_and_namespace(self):
         cli = self.bin / "kubectl-ate"
-        cli.write_text('#!/bin/sh\ncase "$*" in\n  --version) echo "kubectl-ate version v0.4.0-alpha1 commit=test linux/amd64";;\n  *"get actors"*) echo \'{"actors": []}\';;\n  *) exit 1;;\nesac\n')
+        cli.write_text(f'#!/bin/sh\ncase "$*" in\n  --version) echo "kubectl-ate version {VERSION} commit=test linux/amd64";;\n  *"get actors"*) echo \'{{"actors": []}}\';;\n  *) exit 1;;\nesac\n')
         cli.chmod(0o755)
         self.env["MOCK_KUBE_LOG"] = str(self.root / "kube.log")
         self.write_command("kubectl", '#!/bin/sh\nprintf "%s\\n" "$*" >> "$MOCK_KUBE_LOG"\n')
@@ -137,6 +138,7 @@ exit 1
         cli.write_text(CLI)
         cli.chmod(0o755)
         self.write_command("docker", "#!/bin/sh\nexit 98\n")
+        self.write_command("kubectl", "#!/bin/sh\nexit 98\n")
         result = self.run_script("deploy-example.sh", env=dict(self.env, BOOK_AGENT_IMAGE="agent:tag"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("set BOOK_AGENT_IMAGE and BOOK_WEBAPP_IMAGE together", result.stderr)
@@ -144,6 +146,26 @@ exit 1
                                                               BOOK_WEBAPP_IMAGE="webapp:tag"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("demo image must be pinned by digest", result.stderr)
+
+    def test_platform_bootstrap_order_matches_alpha2_dependencies(self):
+        setup = (ROOT / "scripts/setup-kind.sh").read_text()
+        markers = [
+            "helm upgrade --install substrate-crds",
+            "for name in service-dns-ca-pool pod-identity-ca-pool postgres-ca-pool",
+            "helm upgrade --install substrate-podcert",
+            'wait_for_trust_bundle "${signer}"',
+            '"${BOOK_EXAMPLES_ROOT}/scripts/setup-postgres.sh"',
+            "make-jwt-pool",
+            "helm upgrade --install substrate ",
+        ]
+        positions = [setup.index(marker) for marker in markers]
+        self.assertEqual(positions, sorted(positions))
+        self.assertNotIn("meta.helm.sh/release-name=substrate", setup)
+        self.assertIn('--post-renderer "${BOOK_EXAMPLES_ROOT}/scripts/pin-images.sh"', setup)
+
+    def test_golden_snapshot_wait_allows_one_cold_asset_retry(self):
+        deployment = (ROOT / "scripts/deploy-example.sh").read_text()
+        self.assertIn("deadline=$((SECONDS + 600))", deployment)
 
 
 if __name__ == "__main__":

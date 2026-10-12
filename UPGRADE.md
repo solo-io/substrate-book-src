@@ -185,7 +185,7 @@ kubectl --context kind-book-alpha2-validation port-forward \
 
 In the browser, create two runs, confirm that opening one explicitly resumes it, advance through the failing test and repair, inspect the Git diff and `AGENT_REPORT.md`, suspend and reopen the run, complete the workflow, and delete both runs. Confirm from the Actor list that one run never inherits another run's state and that deleting a run removes it without waking the other one.
 
-### Phase 5: clean run and CI
+### Phase 5: clean run
 
 After the retained cluster is understood, delete it with the repository scripts and run the disposable path again under a different name:
 
@@ -194,7 +194,7 @@ export KIND_CLUSTER_NAME=book-alpha2-clean
 ./scripts/test-lab.sh
 ```
 
-The second run proves that success did not depend on residue from manual investigation. Push the implementation and require `.github/workflows/lab.yaml` to pass on Ubuntu 24.04 before merging. Also run one local ARM64 lab when available; registry inspection proves that the released images exist for ARM64, but it does not prove gVisor, Docker Desktop, the companion builds, and the complete suspend/resume path work together on that host.
+The second run proves that success did not depend on residue from manual investigation. For this alpha, the local AMD64 lifecycle run is the acceptance target. Linux/WSL2, ARM64, and GitHub-hosted Linux validation are deferred until the final release candidate rather than repeated for every interim kagent-dev release. Registry inspection still proves that the released images exist for ARM64, but it does not prove gVisor, Docker Desktop, the companion builds, and the complete suspend/resume path work together on that host.
 
 ## Things to watch while debugging
 
@@ -211,4 +211,4 @@ The second run proves that success did not depend on residue from manual investi
 
 ## Completion criteria
 
-The upgrade is ready to merge when all repository references use `v0.5.0-alpha2`, every downloaded artifact and rendered image is checksum/digest locked, no Substrate source checkout or platform image build is required, the fresh and retained kind runs pass, the browser workflow passes, Linux CI passes, and the validation document records the environments that were and were not exercised. Any remaining failure in Actor lifecycle, snapshot semantics, routing, certificate issuance, or database identity blocks the upgrade; an alpha release is exactly where papering over one of those failures becomes expensive later.
+The upgrade is ready to merge when all repository references use `v0.5.0-alpha2`, every downloaded artifact and rendered image is checksum/digest locked, no Substrate source checkout or platform image build is required, the fresh and retained kind runs pass, the browser workflow passes, and the validation document records the environments that were and were not exercised. Linux/WSL2, ARM64, and GitHub-hosted Linux runs are final-release validation, not alpha2 merge gates. Any remaining failure in Actor lifecycle, snapshot semantics, routing, certificate issuance, or database identity blocks the upgrade; an alpha release is exactly where papering over one of those failures becomes expensive later.

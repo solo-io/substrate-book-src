@@ -56,7 +56,9 @@ fi
 
 echo "Creating the ActorTemplate and its golden snapshot..."
 ate create actor-template -f "${template_manifest}"
-deadline=$((SECONDS + 300))
+# A cold Worker may spend its first five-minute operation downloading gVisor.
+# The control plane retries after the asset is cached, so allow that retry to finish.
+deadline=$((SECONDS + 600))
 while ((SECONDS < deadline)); do
   template_json="$(ate get actor-template "${BOOK_TEMPLATE}" -a "${BOOK_ATESPACE}" -o json 2>/dev/null || true)"
   if [[ -z "${template_json}" ]]; then

@@ -4,7 +4,9 @@ The full-lab target environments are macOS with Docker, Linux with Docker, and W
 
 `scripts/runtime-lock.json` records the chart package checksums, their OCI manifest digests for reference, and the platform image index digests. Setup verifies chart archives before installation and uses `scripts/pin-images.sh` as the Helm post-renderer to enforce the image lock. These index digests retain AMD64 and ARM64 selection. The deployed verifier checks the API server's exact locked image reference.
 
-When upgrading the runtime, update the version, all four CLI checksums, both chart package checksums and OCI digests, and the release image digests together. Resolve image tags to their multi-platform index digests, download the charts to compute the archive checksums, then render the charts with the post-renderer and run the disposable lab suite. Chart checksum failures and unknown rendered images must be resolved explicitly rather than bypassed.
+When upgrading the runtime, update the version, all four CLI checksums, all three chart package checksums and OCI digests, and the release image digests together. Resolve image tags to their multi-platform index digests, download the charts to compute the archive checksums, then render the charts with the post-renderer and run the disposable lab suite. Chart checksum failures and unknown rendered images must be resolved explicitly rather than bypassed.
+
+The alpha2 setup has a strict dependency order: CRDs, three CA pools, the separate certificate-controller release, its live trust bundles, PostgreSQL, the owner/read-write roles and connection Secrets, application authentication, and finally the main chart. A later failure can hide the first bootstrap problem, so collect diagnostics before rerunning over a partial installation. The lab targets fresh clusters; it does not migrate alpha1 Actors, snapshots, or PostgreSQL data.
 
 ## One command for a disposable lab
 
@@ -44,7 +46,7 @@ After checking the browser, stop the port-forward and clean up in that same shel
 
 | Command | Coverage |
 | --- | --- |
-| `python3 -m unittest discover -s tests -v` | Application state and routing; verified downloads; context isolation; image validation; failure cleanup and refusal of existing test clusters |
+| `python3 -m unittest discover -s tests -v` | Application state and routing; verified downloads; PostgreSQL bootstrap ordering/Secret keys/failure propagation; context isolation; image validation; failure cleanup and refusal of existing test clusters |
 | `./scripts/verify-example.sh` | Deployed web backend, Actor creation/listing, independent identity/state, stale-step conflicts, Worker reuse, Full restoration, seven-step completion |
 | `./scripts/verify-chapters.sh --allow-worker-replacement` | Capacity errors/timeouts, parked handoff, snapshot contents/scopes, pause/resume, tag forks/deletion, Worker loss and revert/resume, UID preservation, policy creation/readback, credential-effect admission |
 
@@ -56,7 +58,7 @@ The parking-success check uses a test-only 30-second budget, which separates the
 
 `.github/workflows/lab.yaml` runs on pull requests, pushes to `main`, and manual dispatch. The job uses an Ubuntu 24.04 VM and read-only repository permissions. It installs checksum-verified kind 0.31.0, kubectl 1.35.0, and Helm 3.19.0, then runs `test-lab.sh`. Official checkout and artifact actions are pinned by commit.
 
-Logs are retained for seven days, including setup, unit tests, deployed tests, cleanup, Pod listings, events, and bounded component logs. The collector excludes Secrets, kubeconfigs, environment dumps, and signing-key pools. Cleanup runs through the shell exit trap and a final workflow step.
+Logs are retained for seven days, including setup, unit tests, deployed tests, cleanup, Pod listings, events, and bounded logs for the API/controller/router/egress deployments, atelet, the Worker, the separate certificate controller, PostgreSQL, and the web application. The collector excludes Secrets, kubeconfigs, environment dumps, and signing-key pools. Cleanup runs through the shell exit trap and a final workflow step.
 
 The workflow must be committed to a GitHub repository to execute there. Local workflow validation does not establish a successful GitHub-hosted run.
 
@@ -75,6 +77,10 @@ export PATH="$PWD/.ci-tools/bin:$PATH"
 This installer does not install or reconfigure Docker, WSL, Python, jq, OpenSSL, or shasum.
 
 ## Host troubleshooting
+
+If the certificate controller does not become ready, check `podcertificate-controller.log` and confirm that `service-dns-ca-pool`, `pod-identity-ca-pool`, and `postgres-ca-pool` exist before debugging PostgreSQL. If PostgreSQL remains Pending or its TLS projection fails, check `postgres.log` and the cluster events before increasing timeouts. An API server error opening `/run/postgres.podcert.ate.dev/*.pem` points back to the PostgreSQL client-certificate projection or the certificate-controller authorization, while role/schema errors point to `setup-postgres.sh` and the two connection Secret definitions.
+
+A cold Worker downloads the pinned gVisor archive before it can prepare the ActorTemplate's golden snapshot. If that ranged download consumes the first five-minute preparation attempt, the control plane retries after the asset is cached; setup allows ten minutes for the golden tag so that bounded retry can complete. Check `atelet.log` for `Sandbox asset prewarm failed` and `gVisor release download complete` before treating this as an ActorTemplate error.
 
 The companion sets `ndots:4` on the API server and web application Pods. This makes cluster hostnames such as `kubernetes.default.svc.cluster.local` resolve before inherited host search domains, which delayed API authentication on the Linux test host.
 
@@ -96,4 +102,4 @@ This configuration has no private-registry credentials. It leaves the existing D
 
 The API suite does not exercise DOM controls. For each supported host, open the deployed workbench and check New run, Next step, the repaired file and Git diff, suspend/resume, the agent report, passing tests, and Actor deletion. Record the actual browser and where the application was hosted.
 
-The companion has no outbound-request endpoint, so policy admission/readback is covered but outbound authorization, HTTPS interception, and credential delivery need a separate egress fixture. ARM64 remains a separate validation target.
+The companion has no outbound-request endpoint, so policy admission/readback is covered but outbound authorization, HTTPS interception, and credential delivery need a separate egress fixture. Linux/WSL2, ARM64, and GitHub-hosted Linux runs are deferred until the final release candidate rather than repeated for every interim alpha.

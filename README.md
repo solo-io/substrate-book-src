@@ -51,11 +51,13 @@ docs/images/                   Guide diagrams and screenshots
 
 ## Set up the published Substrate runtime
 
-This example uses the [kagent-dev distribution of Agent Substrate v0.4.0-alpha1](https://github.com/kagent-dev/substrate/releases/tag/v0.4.0-alpha1). The reason we use these builds is because the upstream Substrate does not (at the time of writing) publish binary artifacts (just source). When a viable binary release is available, we'll update.
+This example uses the [kagent-dev distribution of Agent Substrate v0.5.0-alpha2](https://github.com/kagent-dev/substrate/releases/tag/v0.5.0-alpha2). This is still an alpha runtime, so the setup pins and verifies the exact release artifacts rather than following mutable tags.
 
-Setup downloads its released `kubectl-ate` binaries and the published `substrate-crds` and `substrate` Helm chart packages, verifies their SHA-256 checksums, and installs the verified packages. All platform container images, including the matching gVisor Worker, are pinned by digest. No Substrate source checkout, Go compiler, or runtime image build is required. This distribution has its own release history; it is not the upstream v0.3.0 release.
+Setup downloads its released `kubectl-ate` binaries and the published `substrate-crds`, `substrate-podcert`, and `substrate` Helm chart packages, verifies their SHA-256 checksums, and installs the verified packages. The lab also applies a checked-in, kind-sized PostgreSQL manifest from the release and prepares the separate owner/read-write database identities the alpha2 API server expects. All platform container images, including PostgreSQL and the matching gVisor Worker, are pinned by digest. No Substrate source checkout, Go compiler, or runtime image build is required.
 
-Run the commands below from this companion repository. The version is declared in `scripts/lib.sh`; the binary checksums are in `scripts/cli-checksums.json`, and the chart checksums and image digests are in `scripts/runtime-lock.json`. Setup creates the local certificate and signing-key material that the platform charts require, configures API authentication, and waits for the platform before deploying the example.
+Run the commands below from this companion repository. The version is declared in `scripts/lib.sh`; the binary checksums are in `scripts/cli-checksums.json`, and the chart checksums and image digests are in `scripts/runtime-lock.json`. Setup creates the three certificate-authority pools, installs the certificate controller as its own Helm release, prepares PostgreSQL, configures API authentication, and waits for the platform before deploying the example.
+
+The alpha2 bootstrap is for a fresh, disposable book cluster. It does not migrate Actors, snapshots, or the PostgreSQL volume from alpha1. Use a new `KIND_CLUSTER_NAME`, or use `./scripts/setup-kind.sh --recreate` only when you intend to delete the named cluster and all Actor state in it.
 
 The two **companion demo images** are still built locally with Docker: the repository worker and its web application. Publishing these for AMD64 and ARM64 is a follow-up task; Substrate, its Worker, and both CLI binaries already come from the public kagent-dev release. The local demo images are pushed to `localhost:5001`, and their deployment references use digests. No cloud account or private registry credentials are required.
 
@@ -93,12 +95,13 @@ Keep Docker running and wait for **Setup complete**. The first run downloads the
 
 The setup script:
 
-1. Downloads and checks the host and Linux `kubectl-ate` binaries for `v0.4.0-alpha1`.
+1. Downloads and checks the host and Linux `kubectl-ate` binaries for `v0.5.0-alpha2`.
 2. Creates or reuses the `kind-book-workbench` context with the required certificate APIs.
-3. Installs the published Substrate charts, generates the lab's key material, and waits for readiness.
-4. Builds only the agent and web application, then deploys them with one published gVisor Worker.
-5. Creates the `book-workbench` Atespace and `repo-workbench` ActorTemplate.
-6. Waits for the ActorTemplate's golden snapshot.
+3. Installs the CRDs, creates the three CA pools, and installs the separate `substrate-podcert` release.
+4. Applies the digest-pinned development PostgreSQL manifest and creates its roles and connection Secrets.
+5. Configures application authentication and installs the main Substrate chart.
+6. Builds only the agent and web application, then deploys them with one published gVisor Worker.
+7. Creates the `book-workbench` Atespace and `repo-workbench` ActorTemplate, then waits for its golden snapshot.
 
 It deliberately creates no repository-run Actor. The first Actor is created from the browser.
 
@@ -327,7 +330,7 @@ The runner selects a unique kind cluster name and refuses to use an existing clu
 
 The maintained chapter suite checks capacity exhaustion, request parking, Full and Data snapshots, pause/resume, tags, Worker-loss recovery, stable identity, and HTTP policy admission. Its parked-success case temporarily sets a 30-second request budget to accommodate slower test hosts, then restores the original router configuration. The default-budget timeout is checked separately. Browser interaction and outbound enforcement are not part of this suite.
 
-The Linux GitHub Actions workflow runs the same fresh-lab command on `ubuntu-24.04` and retains test logs for seven days. On Linux or WSL2, `./scripts/install-ci-tools.sh` installs checksum-verified kind, kubectl, and Helm into `.ci-tools/bin` when those tools are needed. See [the testing guide](docs/testing.md) for commands and coverage.
+The Linux GitHub Actions workflow runs the same fresh-lab command on `ubuntu-24.04` and retains test logs for seven days. On Linux or WSL2, `./scripts/install-ci-tools.sh` installs checksum-verified kind, kubectl, and Helm into `.ci-tools/bin` when those tools are needed. See [the testing guide](docs/testing.md) for commands and coverage, and the [dated alpha2 validation record](docs/validation-kagent-alpha2.md) for the exact host, artifacts, lifecycle checks, and remaining gaps from the local clean run.
 
 ## Clean up
 

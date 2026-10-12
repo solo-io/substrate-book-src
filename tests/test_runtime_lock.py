@@ -19,6 +19,8 @@ class RuntimeLockTest(unittest.TestCase):
         shutil.copytree(ROOT / "scripts", self.root / "scripts")
         self.lock_path = self.root / "scripts/runtime-lock.json"
         self.lock = json.loads(self.lock_path.read_text())
+        self.version = self.lock["version"]
+        self.chart_version = self.version.removeprefix("v")
         self.payload = self.root / "chart-payload"
         self.payload.write_bytes(b"verified chart fixture")
         self.digest = hashlib.sha256(self.payload.read_bytes()).hexdigest()
@@ -60,7 +62,10 @@ cp "$MOCK_CHART_PAYLOAD" "$destination/$chart-$version.tgz"
     def test_chart_download_checks_hash_and_reuses_valid_cache(self):
         result = self.run_script("download-charts.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(self.archives()), 2)
+        self.assertEqual(
+            {archive.name for archive in self.archives()},
+            {f"{chart}-{self.chart_version}.tgz" for chart in self.lock["charts"]},
+        )
         self.write_helm("#!/bin/bash\nexit 98\n")
         result = self.run_script("download-charts.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -87,7 +92,7 @@ cp "$MOCK_CHART_PAYLOAD" "$destination/$chart-$version.tgz"
         self.assertEqual(archive.read_bytes(), self.payload.read_bytes())
 
     def test_renderer_pins_images_preserves_other_fields_and_is_idempotent(self):
-        image = "ghcr.io/kagent-dev/substrate/ateapi:v0.4.0-alpha1"
+        image = f"ghcr.io/kagent-dev/substrate/ateapi:{self.version}"
         original = f"kind: Deployment\nspec:\n  image: '{image}'\n  image: \"{image}\"\n  command: [ateapi]\n"
         result = self.run_script("pin-images.sh", original)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -101,18 +106,18 @@ cp "$MOCK_CHART_PAYLOAD" "$destination/$chart-$version.tgz"
     def test_unknown_images_reject_the_entire_render_even_if_already_digest_pinned(self):
         for unknown in ("unexpected/image:latest", "unexpected/image@sha256:" + "a" * 64):
             with self.subTest(image=unknown):
-                manifests = "  image: ghcr.io/kagent-dev/substrate/ateapi:v0.4.0-alpha1\n"
+                manifests = f"  image: ghcr.io/kagent-dev/substrate/ateapi:{self.version}\n"
                 result = self.run_script("pin-images.sh", manifests + f"  image: {unknown}\n")
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("absent from runtime-lock.json", result.stderr)
                 self.assertEqual(result.stdout, "")
 
     def test_lock_for_another_release_is_rejected(self):
-        self.lock["version"] = "v0.4.0-alpha2"
+        self.lock["version"] = "v0.5.0-alpha1"
         self.lock_path.write_text(json.dumps(self.lock))
         result = self.run_script("pin-images.sh", "")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("must match v0.4.0-alpha1", result.stderr)
+        self.assertIn(f"must match {self.version}", result.stderr)
 
 
 if __name__ == "__main__":

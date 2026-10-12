@@ -71,13 +71,20 @@ def configured_parking(config, budget):
 
 
 def set_router_config(config):
+    log_args = ("kubectl", "--context", lab.CONTEXT, "logs", "deployment/atenet-router",
+                "-n", "ate-system", "--tail=200")
+    initial_loads = lab.run_command(*log_args).stdout.count("loaded config from")
     patch = json.dumps({"data": {"config.yaml": config}})
     lab.run_command("kubectl", "--context", lab.CONTEXT, "patch", "configmap",
                     "atenet-router-agentgateway-config", "-n", "ate-system", "--type=merge", "-p", patch)
-    lab.run_command("kubectl", "--context", lab.CONTEXT, "rollout", "restart",
-                    "deployment/atenet-router", "-n", "ate-system")
-    lab.run_command("kubectl", "--context", lab.CONTEXT, "rollout", "status",
-                    "deployment/atenet-router", "-n", "ate-system", "--timeout=180s")
+    deadline = time.monotonic() + 180
+    last_loads = initial_loads
+    while time.monotonic() < deadline:
+        last_loads = lab.run_command(*log_args).stdout.count("loaded config from")
+        if last_loads > initial_loads:
+            return
+        time.sleep(2)
+    raise RuntimeError(f"AgentGateway did not reload the projected config: loads={initial_loads}->{last_loads}")
 
 
 def verify_capacity(first, second):
@@ -104,10 +111,10 @@ def verify_capacity(first, second):
         set_router_config(configured_parking(config, "30s"))
         def route_ready():
             try:
-                return state(first)
-            except RuntimeError:
-                return None
-        wait_for("router endpoint after rollout", route_ready, lambda value: value is not None, timeout=60)
+                return {"state": state(first)}
+            except RuntimeError as error:
+                return {"error": str(error)}
+        wait_for("router endpoint after rollout", route_ready, lambda value: "state" in value, timeout=60)
         with ThreadPoolExecutor(max_workers=1) as executor:
             started = time.monotonic()
             parked = executor.submit(state, second)
@@ -125,8 +132,23 @@ def verify_capacity(first, second):
 
 def verify_snapshots(first, third, fourth, template, tag):
     files = snapshot_files(lab.actor(first))
-    lab.check(files == {"checkpoint.img.zstd", "durable-dir.tar.zstd", "manifest.json",
+    lab.check(files == {"checkpoint.img.zstd", "durable-dir-workspace.tar.zstd", "manifest.json",
                         "pages.img.zstd", "pages_meta.img.zstd"}, f"Full snapshot contents: {files}")
+    lifecycle("resume", first)
+    before_full_pause = state(first)
+    lifecycle("pause", first)
+    full_paused = lab.actor(first)["status"]
+    lab.check(full_paused["state"] == "ACTOR_STATE_PAUSED" and
+              full_paused["localSnapshot"]["contentScope"] == FULL and
+              not full_paused.get("workerAssignment"),
+              "Full pause did not preserve memory or release the Worker")
+    lifecycle("resume", first)
+    after_full_pause = state(first)
+    for key in ("currentStep", "stateRevision", "transcript", "tests", "files", "diff"):
+        lab.check(after_full_pause[key] == before_full_pause[key],
+                  f"{key} changed across Full pause/resume")
+    lab.suspend(first)
+
     definition = lab.ate("get", "actor-template", "repo-workbench", "-a", lab.NAMESPACE)
     definition.pop("status", None)
     definition["metadata"] = {"atespace": lab.NAMESPACE, "name": template}
@@ -141,7 +163,7 @@ def verify_snapshots(first, third, fourth, template, tag):
     state(third)
     repaired = advance(third, 0, 4)
     lab.suspend(third)
-    lab.check(snapshot_files(lab.actor(third)) == {"durable-dir.tar.zstd", "manifest.json"},
+    lab.check(snapshot_files(lab.actor(third)) == {"durable-dir-workspace.tar.zstd", "manifest.json"},
               "Data snapshot captured memory or omitted durable data")
     lifecycle("resume", third)
     restored = state(third)
@@ -154,15 +176,19 @@ def verify_snapshots(first, third, fourth, template, tag):
     paused = lab.actor(third)["status"]
     lab.check(paused["state"] == "ACTOR_STATE_PAUSED" and not paused.get("workerAssignment"),
               "pause did not release the Worker")
-    lab.check(paused["localSnapshot"]["contentScope"] == FULL, "pause did not capture Full")
+    lab.check(paused["localSnapshot"]["contentScope"] == DATA, "Data pause captured process memory")
     lifecycle("resume", third)
-    lab.check(state(third)["currentStep"] == 1, "Full pause lost process progress")
+    restored_after_pause = state(third)
+    lab.check(restored_after_pause["currentStep"] == 0, "Data pause retained process progress")
+    lab.check(source(restored_after_pause) == source(repaired), "Data pause lost the durable repair")
+    lab.check(len(restored_after_pause["transcript"]) < len(repaired["transcript"]),
+              "Data pause retained the old transcript")
     lifecycle("pause", third)
     lifecycle("suspend", third)
     suspended = lab.actor(third)["status"]
     lab.check(not suspended.get("localSnapshot") and suspended["externalSnapshot"]["contentScope"] == DATA,
               "paused-to-suspended conversion did not commit only Data")
-    print("PASS: Chapter 5 Full/Data contents, repaired files, Full pause, and paused-to-Data suspend", flush=True)
+    print("PASS: Chapter 5 Full pause preserves memory; Data pause/suspend preserves files and resets memory", flush=True)
 
     lab.ate("create", "tag", tag, "--actor", first, "-a", lab.NAMESPACE)
     create(fourth, tag=tag)
