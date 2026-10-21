@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -215,6 +216,20 @@ esac
         calls = (self.root / "kube.log").read_text().splitlines()
         self.assertTrue(calls and all(call.startswith("--context kind-isolated-lab ") for call in calls))
         self.assertFalse(any("delete" in call or "apply" in call or "restart" in call for call in calls))
+
+    def test_live_demo_policies_exist_and_default_to_the_demo_lab(self):
+        script = (ROOT / "scripts/live-demo.sh").read_text()
+        self.assertIn('KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-book-alpha3-cred}"', script)
+        policies = set(re.findall(r"demo/policies/[\w-]+\.yaml", script))
+        self.assertEqual(len(policies), 3)
+        for policy in policies:
+            self.assertTrue((ROOT / policy).is_file(), policy)
+
+    def test_live_demo_code_excerpts_match_the_source(self):
+        result = subprocess.run(["bash", str(ROOT / "scripts/live-demo.sh"), "--check-snippets"],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("code excerpts match the source", result.stdout)
 
     def test_demo_env_must_be_sourced_and_names_the_lab_context(self):
         result = subprocess.run(["bash", str(ROOT / "scripts/demo-env.sh")], capture_output=True, text=True, timeout=15)

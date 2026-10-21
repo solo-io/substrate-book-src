@@ -64,6 +64,19 @@ ate() {
   "${BOOK_EXAMPLES_ROOT}/.bin/kubectl-ate" --context "${KUBECTL_CONTEXT}" "$@"
 }
 
+# Print the ActorTemplate's golden tag once its snapshot is stored; fail otherwise.
+# deploy-example.sh creates it once; every Actor from the template restores from it.
+golden_tag_ready() {
+  local tag
+  tag="$(ate get actor-template "${BOOK_TEMPLATE}" -a "${BOOK_ATESPACE}" -o json 2>/dev/null |
+    jq -r '.status.goldenSnapshotStatus.goldenTag.name // empty' || true)"
+  [[ -n "${tag}" ]] || return 1
+  ate get tags -a "${BOOK_ATESPACE}" -o json 2>/dev/null | jq -e --arg tag "${tag}" '
+    [.tags[]? | select(.metadata.name == $tag)
+     | .status.snapshot.durableSnapshot.status == "SNAPSHOT_STORAGE_STATUS_COMPLETED"] | any' >/dev/null || return 1
+  echo "${tag}"
+}
+
 configure_api_dns() {
   # Resolve cluster FQDNs before inherited host search domains.
   kube patch deployment ate-api-server -n ate-system --type=strategic \

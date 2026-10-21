@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -123,11 +124,34 @@ class ActorAssertionVerifier:
         raise KeyError(f"no signing key with kid {kid!r}")
 
 
+def describe_presented(value: str | None) -> str | None:
+    """Describe a presented credential header for the log without revealing it.
+
+    Only the demo's literal placeholder is shown as is; a bearer token appears as
+    its fingerprint, and anything else only as its length.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if stripped.lower() == "placeholder":
+        return "placeholder"
+    scheme, _, presented = stripped.partition(" ")
+    if scheme.lower() == "bearer" and presented.strip():
+        return f"Bearer sha256:{fingerprint(presented.strip().encode('utf-8'))}"
+    return f"{len(stripped)} bytes, not shown"
+
+
+def print_log(line: str) -> None:
+    print(line, flush=True)
+
+
 class SourceControlState:
-    def __init__(self, token_file: Path, account: str, verifier: ActorAssertionVerifier | None):
+    def __init__(self, token_file: Path, account: str, verifier: ActorAssertionVerifier | None,
+                 log: Callable[[str], None] = print_log):
         self.token_file = token_file
         self.account = account
         self.verifier = verifier
+        self.log = log
         self.lock = threading.Lock()
         self.pulls: list[dict[str, object]] = []
 
@@ -151,6 +175,23 @@ class SourceControlState:
         return True, "ok", fingerprint(presented_bytes)
 
     def open_pull(self, repo: str, body: dict[str, object], headers: dict[str, str]) -> tuple[HTTPStatus, dict[str, object]]:
+        status, response = self._open_pull(repo, body, headers)
+        # One JSON line per request: what arrived and what the service decided.
+        self.log(json.dumps({
+            "time": utc_now(),
+            "event": "pull_request",
+            "repo": repo,
+            "status": status.value,
+            "authorization": describe_presented(headers.get("authorization")),
+            "actorAssertion": describe_presented(headers.get(ASSERTION_HEADER.lower())),
+            "error": response.get("error"),
+            "authenticatedAs": response.get("authenticatedAs"),
+            "number": response.get("number"),
+            "actor": response.get("actor"),
+        }))
+        return status, response
+
+    def _open_pull(self, repo: str, body: dict[str, object], headers: dict[str, str]) -> tuple[HTTPStatus, dict[str, object]]:
         accepted, reason, token_fingerprint = self.authenticate(headers.get("authorization"))
         if not accepted:
             return HTTPStatus.UNAUTHORIZED, {"error": reason, "tokenFingerprint": token_fingerprint}

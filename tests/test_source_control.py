@@ -49,7 +49,9 @@ class SourceControlTest(unittest.TestCase):
                            "name": "repo-workbench-1", "uid": "uid-1", "audience": "svc", "expiresAt": 0,
                            "claims": {}},
         })
-        SERVER.SourceControlHandler.state = SERVER.SourceControlState(self.token_file, "repo-workbench-bot", self.verifier)
+        self.log = []
+        SERVER.SourceControlHandler.state = SERVER.SourceControlState(self.token_file, "repo-workbench-bot", self.verifier,
+                                                                      log=self.log.append)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), SERVER.SourceControlHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -106,6 +108,23 @@ class SourceControlTest(unittest.TestCase):
         self.assertEqual(body["actor"], {"subject": "actor/book-workbench/repo-workbench-1",
                                          "atespace": "book-workbench", "name": "repo-workbench-1", "uid": "uid-1"})
         self.assertEqual(self.pulls()[0]["actor"]["uid"], "uid-1")
+
+    def test_each_request_is_logged_without_the_token(self):
+        self.post({"Authorization": "placeholder"})
+        self.post({"Authorization": "Bearer account-token-1", "Actor-Assertion": "minted-jwt"})
+        self.post({"Authorization": "secret-but-not-bearer"})
+        records = [json.loads(line) for line in self.log]
+        self.assertEqual([record["status"] for record in records], [401, 201, 401])
+        self.assertEqual(records[0]["authorization"], "placeholder")
+        self.assertIn("bearer", records[0]["error"])
+        fingerprint = hashlib.sha256(b"account-token-1").hexdigest()[:16]
+        self.assertEqual(records[1]["authorization"], f"Bearer sha256:{fingerprint}")
+        self.assertEqual(records[1]["actor"]["uid"], "uid-1")
+        self.assertEqual(records[1]["authenticatedAs"], "repo-workbench-bot")
+        self.assertEqual(records[2]["authorization"], "21 bytes, not shown")
+        logged = "\n".join(self.log)
+        for secret in ("account-token-1", "minted-jwt", "secret-but-not-bearer"):
+            self.assertNotIn(secret, logged)
 
     def test_token_rotation_is_read_from_the_mounted_file(self):
         self.token_file.write_text("account-token-2\n")

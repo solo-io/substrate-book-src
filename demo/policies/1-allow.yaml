@@ -1,0 +1,4 @@
+rules:
+- http:
+    hostnames:
+    - source-control.book-workbench.svc.cluster.local

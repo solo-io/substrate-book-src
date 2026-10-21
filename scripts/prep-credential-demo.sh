@@ -37,9 +37,8 @@ for deployment in "${BOOK_WORKER_POOL}" repo-workbench-webapp source-control; do
   kube get "deployment/${deployment}" -n "${BOOK_ATESPACE}" >/dev/null 2>&1 ||
     fail "deployment/${deployment} is missing from ${BOOK_ATESPACE}; run ./scripts/setup-kind.sh first"
 done
-template_json="$(ate get actor-template "${BOOK_TEMPLATE}" -a "${BOOK_ATESPACE}" -o json 2>/dev/null || true)"
-golden_tag="$(jq -r '.status.goldenSnapshotStatus.goldenTag.name // empty' <<<"${template_json:-{\}}")"
-[[ -n "${golden_tag}" ]] || fail "ActorTemplate ${BOOK_TEMPLATE} has no golden snapshot; run ./scripts/setup-kind.sh first"
+golden_tag="$(golden_tag_ready)" ||
+  fail "ActorTemplate ${BOOK_TEMPLATE} has no stored golden snapshot; run ./scripts/setup-kind.sh first"
 
 echo "Deleting Actors from earlier runs (their egress policies go with them)..."
 actors_json="$(ate get actors -a "${BOOK_ATESPACE}" -o json 2>/dev/null || echo '{}')"
@@ -77,13 +76,25 @@ unset store_token service_token
 echo "Restarting the source-control service to clear its pull history and pick up the token..."
 kube rollout restart deployment/source-control -n "${BOOK_ATESPACE}" >/dev/null
 kube rollout status deployment/source-control -n "${BOOK_ATESPACE}" --timeout=180s >/dev/null
+# The gateway caches resolved credentials and minted Actor JWTs by Atespace and
+# Actor name, not UID, so a recreated repo-workbench-1 would otherwise receive
+# its predecessor's JWT (and old UID) for up to two thirds of its lifetime.
+echo "Restarting the egress gateway to drop cached credentials and Actor JWTs..."
+kube rollout restart deployment/atenet-egress -n ate-system >/dev/null
+kube rollout status deployment/atenet-egress -n ate-system --timeout=180s >/dev/null
 kube rollout status "deployment/${BOOK_WORKER_POOL}" -n "${BOOK_ATESPACE}" --timeout=180s >/dev/null
 kube rollout status deployment/repo-workbench-webapp -n "${BOOK_ATESPACE}" --timeout=180s >/dev/null
-pulls="$(kube exec -n "${BOOK_ATESPACE}" deployment/repo-workbench-webapp -- python3 -c '
+# The Service can route to the terminating Pod for a few seconds after the rollout.
+deadline=$((SECONDS + 60))
+while :; do
+  pulls="$(kube exec -n "${BOOK_ATESPACE}" deployment/repo-workbench-webapp -- python3 -c '
 import json
 from urllib.request import urlopen
 print(len(json.load(urlopen("http://127.0.0.1/api/source-control/pulls", timeout=30))["pulls"]))')"
-[[ "${pulls}" == 0 ]] || fail "source-control still reports ${pulls} pulls after restart"
+  [[ "${pulls}" == 0 ]] && break
+  ((SECONDS < deadline)) || fail "source-control still reports ${pulls} pulls after restart"
+  sleep 2
+done
 
 workers="$(ate get workers -n "${BOOK_ATESPACE}" -o json | jq -r '[.workers[]? | select(.status.state == "WORKER_STATE_ACTIVE")] | length')"
 [[ "${workers}" == 1 ]] || fail "expected one active Worker in ${BOOK_ATESPACE}, found ${workers}"
