@@ -196,6 +196,35 @@ exit 1
         teardown = (ROOT / "scripts/teardown-example.sh").read_text()
         self.assertIn("delete namespace workbench-secrets", teardown)
 
+    def test_demo_prep_refuses_a_cluster_without_the_locked_api_server(self):
+        cli = self.bin / "kubectl-ate"
+        cli.write_text(CLI)
+        cli.chmod(0o755)
+        self.env["MOCK_KUBE_LOG"] = str(self.root / "kube.log")
+        self.write_command("kubectl", """#!/bin/sh
+printf '%s\\n' "$*" >> "$MOCK_KUBE_LOG"
+case "$*" in
+  *"get --raw=/readyz"*) exit 0;;
+  *"get deployment/ate-api-server"*) printf 'ghcr.io/kagent-dev/substrate/ateapi:v0.5.0-alpha3@sha256:abc';;
+  *) exit 1;;
+esac
+""")
+        result = self.run_script("prep-credential-demo.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not run the locked", result.stderr)
+        calls = (self.root / "kube.log").read_text().splitlines()
+        self.assertTrue(calls and all(call.startswith("--context kind-isolated-lab ") for call in calls))
+        self.assertFalse(any("delete" in call or "apply" in call or "restart" in call for call in calls))
+
+    def test_demo_env_must_be_sourced_and_names_the_lab_context(self):
+        result = subprocess.run(["bash", str(ROOT / "scripts/demo-env.sh")], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 2)
+        result = subprocess.run(["bash", "-c", 'source "$1"; echo "$CTX"; type wb publish >/dev/null', "bash",
+                                 str(ROOT / "scripts/demo-env.sh")],
+                                env=dict(os.environ, KIND_CLUSTER_NAME="demo-lab"), capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("kind-demo-lab", result.stdout)
+
     def test_golden_snapshot_wait_allows_one_cold_asset_retry(self):
         deployment = (ROOT / "scripts/deploy-example.sh").read_text()
         self.assertIn("deadline=$((SECONDS + 600))", deployment)

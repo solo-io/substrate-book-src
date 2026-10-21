@@ -49,7 +49,7 @@ webapp/                        Multi-Actor browser UI and control-plane backend
 source-control/                Stand-in internal service that checks the brokered token and Actor JWT
 sample-project/                Small repository with intentionally failing tests
 manifests/                     WorkerPool, RBAC, web app, source-control service, and ActorTemplate templates
-scripts/                       Setup, deployment, port-forwarding, and cleanup
+scripts/                       Setup, deployment, port-forwarding, demo prep and helpers, and cleanup
 tests/                         Agent and web-application tests
 docs/images/                   Guide diagrams and screenshots
 ```
@@ -279,7 +279,7 @@ Once `AGENT_REPORT.md` exists (step five or later), the Actor can publish it to 
 
 Setup prepared three things for this section. The platform operator granted the `book-workbench` Atespace access to the `workbench-secrets` namespace through the chart's `credentialProvider.namespacePolicies` value. Setup generated a random account token and stored it only in `workbench-secrets/git-token` (the credential store) and `book-workbench/source-control-token` (the service's own copy). The `source-control` Deployment reads its copy from a mounted Secret and reports a SHA-256 fingerprint of whichever token it receives, never the token itself.
 
-The commands below use the Chapter 3 `kubectl exec` bridge against the companion backend; the browser's **Publish report** button sends the same request. For a complete manual run with expected output at every step, see [the credential brokering walkthrough](docs/credential-brokering-walkthrough.md).
+The commands below use the Chapter 3 `kubectl exec` bridge against the companion backend; the browser's **Publish report** button sends the same request. For a complete manual run with expected output at every step, see [the credential brokering walkthrough](docs/credential-brokering-walkthrough.md). `./scripts/prep-credential-demo.sh` resets a running lab to that walkthrough's starting state, and sourcing `./scripts/demo-env.sh` defines its shell helpers.
 
 ```shell
 publish() {
@@ -342,7 +342,8 @@ print(json.dumps(json.load(urlopen("http://127.0.0.1/api/source-control/pulls"))
 kubectl get secret git-token -n workbench-secrets -o jsonpath='{.data.token}' |
   base64 -d | shasum -a 256 | cut -c1-16
 
-kubectl logs -n ate-system deployment/atenet-egress --tail=20 | grep repo-workbench-1
+kubectl logs -n ate-system deployment/atenet-egress --since=10m |
+  grep 'ate.actor.name=repo-workbench-1' | grep 'http.status='
 ```
 
 **The provider boundary.** Point the same rule at a Secret in a namespace the Atespace was not granted, for example `ate-secret://k8s.io/default/book-workbench/source-control-token/token`. The provider refuses, the gateway fails closed with `403`, and the request never leaves the cluster. Restore the granted policy afterward.

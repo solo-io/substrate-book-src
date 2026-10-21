@@ -54,6 +54,8 @@ kubectl --context "$CTX" -n book-workbench rollout restart deployment/source-con
 kubectl --context "$CTX" -n book-workbench rollout status deployment/source-control --timeout=120s
 ```
 
+
+
 ## 1. What setup prepared
 
 The platform operator's grant, applied through the chart value `credentialProvider.namespacePolicies`:
@@ -159,14 +161,21 @@ The service's view. It authenticated an account and recorded a token fingerprint
 wb /api/source-control/pulls | jq '.pulls[-1] | {number, authenticatedAs, tokenFingerprint, actor}'
 ```
 
-The gateway's view. The structured access log names the Actor on the request:
+The gateway's view. The structured access log names the Actor on the request. The gateway also logs DNS resolver debug lines by the hundred, so search by time rather than by line count:
 
 ```shell
-kubectl --context "$CTX" logs -n ate-system deployment/atenet-egress --tail=50 |
-  grep 'http.status=201' | grep -o 'http.host=[^ ]* .*ate.atespace=[^ ]*' | tail -1
+kubectl --context "$CTX" logs -n ate-system deployment/atenet-egress --since=10m |
+  grep 'ate.actor.name=repo-workbench-1' | grep 'http.status=' | tail -1
 ```
 
-Expect `ate.actor.name=repo-workbench-1`, the Actor's UID, and `ate.atespace=book-workbench` on the line.
+Expect one `info request` line with `http.status=201`, `ate.actor.name=repo-workbench-1`, the Actor's UID, and `ate.atespace=book-workbench`. The gateway's call to the credential provider for that same request is logged just before it:
+
+```shell
+kubectl --context "$CTX" logs -n ate-system deployment/atenet-egress --since=10m |
+  grep 'FetchSecret' | tail -1
+```
+
+Expect an `upstream request` line to `k8s-credential-provider.ate-system.svc:50051` with `http.status=200`. That is the only place the real token travels: from the provider to the gateway, over mTLS, after the request left the sandbox.
 
 ## 6. The provider boundary
 
@@ -195,6 +204,26 @@ wb /api/source-control/pulls | jq '.pulls | length'
 ```
 
 Expect `1`.
+
+### What the grant is, and is not
+
+The grant is the provider's namespace policy: the `credentialProvider.namespacePolicies` Helm value, rendered into the `k8s-credential-provider-namespace-policy` ConfigMap you read in section 1. It says one thing: Actors in Atespace X may resolve Secrets in Kubernetes namespaces Y and Z. It is default-deny, and the provider checks it on every `FetchSecret` call using the Actor identity the gateway asserts. The Secret in this step exists and the provider's ServiceAccount could read it, so the refusal comes from the grant alone.
+
+It is a validity check, not a lease. It has no time to live, expiration, use count, or revocation handle, and it is coarse in three ways:
+
+- Scope is the whole namespace. A grant covers every Secret and every key there. You cannot grant one Secret.
+- Subject is the Atespace, not the Actor. Every Actor in `book-workbench` gets the same answer. The provider receives `spiffe://substrate-actor.local/actor/<atespace>/<name>` with no UID, so it cannot tell a recreated Actor at the same name from its predecessor.
+- It is loaded when the provider starts. Changing the Helm value rolls the provider; editing the ConfigMap by hand needs a restart.
+
+Three separate decisions gate one injected request, and none of them carries a lifetime:
+
+| Decision | Who decides | What it answers |
+| --- | --- | --- |
+| May this policy name that URI? | `ate-api-server`, through its OpenFGA roles | Who may write `repo-workbench-1`'s `EgressPolicy` at all |
+| May this Atespace resolve that namespace? | The credential provider's grant | This step's refusal |
+| May the provider read that Secret? | Kubernetes RBAC on the provider's ServiceAccount | Cluster-wide `get` in the published chart |
+
+Time enters in two places only. The static Secret has no expiry of its own; the destination decides how long the token is good. The gateway caches a resolved credential for 300 seconds per Actor and URI, so a rotation (section 9) and a revocation both take up to five minutes to reach injected requests. If you removed `workbench-secrets` from the grant and rolled the provider, an Actor that had already published would keep receiving the cached token for up to that long. The `actorJwt` source in section 7 is the one place the policy writer sets a lifetime: `expirationSeconds` is required, bounded to 300 through 3600, becomes the token's `exp` claim, and the gateway caches the minted JWT for two thirds of it. That is a property of the minted assertion, not of any grant.
 
 ## 7. Assert the Actor with a Substrate-minted JWT
 
@@ -299,7 +328,7 @@ The UI exposes the same action. Keep this running in a second terminal:
 KIND_CLUSTER_NAME=book-alpha3-cred ./scripts/open-workbench.sh
 ```
 
-Open http://localhost:8080, select `repo-workbench-1`, and use **Publish report** with and without **Assert Actor** checked. The notice line reports the HTTP status the service returned, and the transcript shows each attempt's placeholder headers.
+Open [http://localhost:8080](http://localhost:8080), select `repo-workbench-1`, and use **Publish report** with and without **Assert Actor** checked. The notice line reports the HTTP status the service returned, and the transcript shows each attempt's placeholder headers.
 
 Delete the Actors when you are done. Deleting an Actor also deletes its egress policy.
 
@@ -309,10 +338,13 @@ kubectl ate --context "$CTX" delete actor repo-workbench-1 -a book-workbench --a
 kubectl ate --context "$CTX" get actors -a book-workbench
 ```
 
+
+
 ## Troubleshooting
 
 - **Still a DNS error right after creating a policy.** The relay and gateway pick up policies asynchronously. Wait a few seconds and publish again.
-- **`403` with "no credential provider configured".** The egress gateway config lost its `credentialProviders` entry; the published chart wires it by default. Check `kubectl --context "$CTX" -n ate-system get configmap atenet-egress-agentgateway-config -o yaml`.
-- **`403` naming your Atespace on a granted namespace.** The provider loads grants at startup. Check the ConfigMap from section 1 and the provider's Pod age; a Helm values change rolls it automatically.
-- **`503` from the gateway.** The provider or the control plane was unreachable. It is fail-closed and retryable; check `kubectl --context "$CTX" -n ate-system get pods`.
+- `403` **with "no credential provider configured".** The egress gateway config lost its `credentialProviders` entry; the published chart wires it by default. Check `kubectl --context "$CTX" -n ate-system get configmap atenet-egress-agentgateway-config -o yaml`.
+- `403` **naming your Atespace on a granted namespace.** The provider loads grants at startup. Check the ConfigMap from section 1 and the provider's Pod age; a Helm values change rolls it automatically.
+- `503` **from the gateway.** The provider or the control plane was unreachable. It is fail-closed and retryable; check `kubectl --context "$CTX" -n ate-system get pods`.
 - **Actor JWT rejected with "signing key unavailable".** The service could not reach `https://idp.ate-system.svc` or did not trust its certificate. Check the `ate-idp-server` Pods and the projected `servicedns.podcert.ate.dev` trust bundle in the `source-control` Pod.
+
