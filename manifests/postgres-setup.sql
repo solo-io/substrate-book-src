@@ -13,7 +13,7 @@
 -- limitations under the License.
 
 -- Copied from pkg/postgressetup/setup.sql at Substrate release commit
--- 9c4b1fb52212028100fa02c8a7bc4526575ea37e.
+-- f499a14475013cf2f8dee8ee4b0f22b47d27047f.
 BEGIN;
 
 SELECT

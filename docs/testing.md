@@ -6,7 +6,7 @@ The full-lab target environments are macOS with Docker, Linux with Docker, and W
 
 When upgrading the runtime, update the version, all four CLI checksums, all three chart package checksums and OCI digests, and the release image digests together. Resolve image tags to their multi-platform index digests, download the charts to compute the archive checksums, then render the charts with the post-renderer and run the disposable lab suite. Chart checksum failures and unknown rendered images must be resolved explicitly rather than bypassed.
 
-The alpha2 setup has a strict dependency order: CRDs, three CA pools, the separate certificate-controller release, its live trust bundles, PostgreSQL, the owner/read-write roles and connection Secrets, application authentication, and finally the main chart. A later failure can hide the first bootstrap problem, so collect diagnostics before rerunning over a partial installation. The lab targets fresh clusters; it does not migrate alpha1 Actors, snapshots, or PostgreSQL data.
+The v0.6.0-alpha3 setup has a strict dependency order: CRDs, three CA pools, the separate certificate-controller release, its live trust bundles, PostgreSQL, the owner/read-write roles and connection Secrets, application authentication, and finally the main chart. A later failure can hide the first bootstrap problem, so collect diagnostics before rerunning over a partial installation. The lab targets fresh clusters; it does not migrate Actors, snapshots, or PostgreSQL data from an earlier alpha.
 
 ## One command for a disposable lab
 
@@ -16,7 +16,7 @@ With the README prerequisites installed:
 ./scripts/test-lab.sh
 ```
 
-The runner creates a uniquely named kind cluster and refuses existing cluster names. It runs all unit tests, installs the published Substrate release, verifies the demo lifecycle, runs chapter regressions, and tears down the resources and cluster. It restores the previous Kubernetes context and preserves logs in `.test-results/<cluster-name>/`. A failing assertion, setup error, or cleanup error makes the run fail.
+The runner creates a uniquely named kind cluster and refuses existing cluster names. It runs all unit tests, installs the published Substrate release, follows the Chapter 3–6 lab state from one chapter into the next, and tears down the resources and cluster. It restores the previous Kubernetes context and preserves logs in `.test-results/<cluster-name>/`. A failing assertion, setup error, or cleanup error makes the run fail.
 
 To use an explicit new name:
 
@@ -47,10 +47,10 @@ After checking the browser, stop the port-forward and clean up in that same shel
 | Command | Coverage |
 | --- | --- |
 | `python3 -m unittest discover -s tests -v` | Application state and routing; verified downloads; PostgreSQL bootstrap ordering/Secret keys/failure propagation; context isolation; image validation; failure cleanup and refusal of existing test clusters |
-| `./scripts/verify-example.sh` | Deployed web backend, Actor creation/listing, independent identity/state, stale-step conflicts, Worker reuse, Full restoration, seven-step completion |
-| `./scripts/verify-chapters.sh --allow-worker-replacement` | Capacity errors/timeouts, parked handoff, snapshot contents/scopes, pause/resume, tag forks/deletion, Worker loss and revert/resume, UID preservation, policy creation/readback, credential-effect admission |
+| `./scripts/verify-example.sh` | Standalone deployed-backend smoke test: Actor creation/listing, independent identity/state, stale-step conflicts, Worker reuse, MEMORY restoration, seven-step completion |
+| `./scripts/verify-chapters.sh --allow-worker-replacement` | Stateful Chapter 3–6 lab: initial Worker/template checks; two-Actor CLI and backend walkthrough through the step 6/step 1 handoff; HTTP 503 capacity response and parked handoff; Worker loss and revert/resume; snapshot contents/fidelities, async/sync suspend, tag forks/deletion and Chapter 5 reset; UID preservation; credential brokering through the egress gateway (no-policy denial, hostname-only 401, injected Secret 201, ungranted-namespace 403, verified Actor JWT, and injection after resume) |
 
-Both deployed verifiers require an empty `book-workbench` Atespace. The chapter suite also requires no existing tags or additional ActorTemplates. Its explicit flag acknowledges that it deletes the test Worker's Pod. Use it only on a disposable kind lab.
+Both deployed verifiers require an empty `book-workbench` Atespace. The full runner invokes only the stateful Chapter 3–6 suite; `verify-example.sh` remains available as a shorter standalone smoke test. The chapter suite allows only the original `repo-workbench` template and its generated golden Tag; it rejects any additional templates or Tags. Its explicit flag acknowledges that it deletes the test Worker's Pod. Use it only on a disposable kind lab.
 
 The parking-success check uses a test-only 30-second budget, which separates the handoff behavior from host restore speed. It first checks a timeout with the chart's default budget, then restores the router's original configuration after checking a successful original request. This does not change the reader setup's budget.
 
@@ -102,4 +102,4 @@ This configuration has no private-registry credentials. It leaves the existing D
 
 The API suite does not exercise DOM controls. For each supported host, open the deployed workbench and check New run, Next step, the repaired file and Git diff, suspend/resume, the agent report, passing tests, and Actor deletion. Record the actual browser and where the application was hosted.
 
-The companion has no outbound-request endpoint, so policy admission/readback is covered but outbound authorization, HTTPS interception, and credential delivery need a separate egress fixture. Linux/WSL2, ARM64, and GitHub-hosted Linux runs are deferred until the final release candidate rather than repeated for every interim alpha.
+The companion's publish action exercises cleartext HTTP egress, credential injection, and Actor JWT delivery against the in-cluster source-control service. HTTPS interception and the Actor-side interception trust bundle still need a separate egress fixture. Linux/WSL2, ARM64, and GitHub-hosted Linux runs are deferred until the final release candidate rather than repeated for every interim alpha.

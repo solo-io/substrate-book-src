@@ -5,6 +5,14 @@ atelet:
   extraArgs:
   - --localhost-registry-replacement=kind-registry:5000
 
+# The platform operator's grant for credential brokering: Actors in the
+# book-workbench Atespace may have Secrets from the workbench-secrets namespace
+# injected by the egress gateway. The grant covers every Secret and key there.
+credentialProvider:
+  namespacePolicies:
+  - atespace: book-workbench
+    allowedNamespaces: [workbench-secrets]
+
 # The single-user lab must fit alongside Kubernetes on a two-CPU CI runner.
 postgres:
   clientCertificates:

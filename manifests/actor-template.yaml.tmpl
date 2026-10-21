@@ -19,6 +19,8 @@ containers:
     value: /opt/repo-workbench-seed
   - name: ACTOR_INFO_DIR
     value: /run/ate
+  - name: SOURCE_CONTROL_URL
+    value: http://source-control.book-workbench.svc.cluster.local/repos/repo-workbench/pulls
   wakeupProbe:
     httpGet:
       path: /readyz
@@ -36,11 +38,8 @@ resources:
   - name: memory
     quantity: 512Mi
 snapshotConfig:
-  onCommit: SNAPSHOT_CONTENT_SCOPE_FULL
+  preferredFidelity: SNAPSHOT_FIDELITY_MEMORY
   storageLocation: gs://ate-snapshots/book-workbench/
-sandboxConfig:
-  sandboxClass: SANDBOX_CLASS_GVISOR
-  configName: gvisor-default
 volumes:
 - name: workspace
   durableDir: {}

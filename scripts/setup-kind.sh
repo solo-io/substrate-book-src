@@ -108,6 +108,8 @@ helm upgrade --install substrate "${SUBSTRATE_CHART_DIR}/substrate-${SUBSTRATE_C
 configure_api_dns
 
 api_deployment="$(kube get deployment/ate-api-server -n ate-system -o json)"
+objectstore_plugin_image="$(locked_image "ghcr.io/kagent-dev/substrate/objectstore-plugin:${SUBSTRATE_VERSION}")"
+idp_image="$(locked_image "ghcr.io/kagent-dev/substrate/ate-idp-server:${SUBSTRATE_VERSION}")"
 if ! jq -e --arg image "${SUBSTRATE_API_IMAGE}" '
   .spec.template.spec.containers[] | select(.name == "ate-api-server") |
   (.image == $image) and
@@ -120,6 +122,29 @@ if ! jq -e --arg image "${SUBSTRATE_API_IMAGE}" '
   any(.volumeMounts[]; .mountPath == "/run/postgres.podcert.ate.dev")
 ' <<<"${api_deployment}" >/dev/null; then
   echo "error: ate-api-server does not use the locked image and both PostgreSQL Secrets/certificates" >&2
+  exit 1
+fi
+if ! jq -e --arg image "${objectstore_plugin_image}" '
+  any(.spec.template.spec.initContainers[];
+      .name == "objectstore-plugin" and .restartPolicy == "Always" and .image == $image)
+' <<<"${api_deployment}" >/dev/null; then
+  echo "error: ate-api-server does not use the locked object-store control provider" >&2
+  exit 1
+fi
+idp_deployment="$(kube get deployment/ate-idp-server -n ate-system -o json)"
+if ! jq -e --arg image "${idp_image}" '
+  any(.spec.template.spec.containers[];
+      .name == "ate-idp-server" and .image == $image)
+' <<<"${idp_deployment}" >/dev/null; then
+  echo "error: ate-idp-server does not use the locked release image" >&2
+  exit 1
+fi
+atelet_daemonset="$(kube get daemonset/atelet -n ate-system -o json)"
+if ! jq -e --arg image "${objectstore_plugin_image}" '
+  any(.spec.template.spec.initContainers[];
+      .name == "objectstore-plugin" and .restartPolicy == "Always" and .image == $image)
+' <<<"${atelet_daemonset}" >/dev/null; then
+  echo "error: atelet does not use the locked object-store node provider" >&2
   exit 1
 fi
 

@@ -30,8 +30,8 @@ class LabRunnerTest(unittest.TestCase):
 if [[ "$1 $2" == "get clusters" ]]; then printf '%s\\n' "$MOCK_EXISTING"; fi
 ''')
         self.write(self.mock / "kubectl", '#!/bin/bash\nif [[ "$1 $2" == "config current-context" ]]; then echo kind-original; fi\n')
-        for script, marker in (("setup-kind.sh", "setup"), ("verify-example.sh", "demo"),
-                               ("verify-chapters.sh", "chapters"), ("collect-diagnostics.sh", "diagnostics"),
+        for script, marker in (("setup-kind.sh", "setup"), ("verify-chapters.sh", "chapters"),
+                               ("collect-diagnostics.sh", "diagnostics"),
                                ("teardown-example.sh", "teardown"), ("delete-kind.sh", "delete-kind")):
             self.write(self.root / "scripts" / script,
                        f'#!/bin/bash\necho {marker} >> "$MOCK_TRACE"\n'
@@ -69,7 +69,7 @@ if [[ "$1 $2" == "get clusters" ]]; then printf '%s\\n' "$MOCK_EXISTING"; fi
         self.env["MOCK_FAIL"] = "chapters"
         result = self.run_lab()
         self.assertEqual(result.returncode, 7)
-        self.assertEqual(self.calls(), ["setup", "demo", "chapters", "diagnostics", "teardown", "delete-kind"])
+        self.assertEqual(self.calls(), ["setup", "chapters", "diagnostics", "teardown", "delete-kind"])
 
     def test_cleanup_failure_fails_an_otherwise_successful_run(self):
         self.env["MOCK_FAIL"] = "teardown"
@@ -80,7 +80,7 @@ if [[ "$1 $2" == "get clusters" ]]; then printf '%s\\n' "$MOCK_EXISTING"; fi
     def test_keep_cluster_defers_deletion(self):
         result = self.run_lab("--keep-cluster")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.calls(), ["setup", "demo", "chapters", "diagnostics"])
+        self.assertEqual(self.calls(), ["setup", "chapters", "diagnostics"])
         self.assertIn("kind-isolated-regression", result.stdout)
 
 

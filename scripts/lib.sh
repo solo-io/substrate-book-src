@@ -3,7 +3,8 @@
 set -o errexit -o nounset -o pipefail
 
 BOOK_EXAMPLES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUBSTRATE_VERSION="v0.5.0-alpha2"
+SUBSTRATE_VERSION="v0.6.0-alpha3"
+SUBSTRATE_COMMIT="e2fc0fa9f77ab5fc09eb01b43ccd74bd84c67c71"
 SUBSTRATE_CHART_VERSION="${SUBSTRATE_VERSION#v}"
 SUBSTRATE_CHART_REPO="oci://ghcr.io/kagent-dev/substrate/helm"
 SUBSTRATE_CHART_DIR="${BOOK_EXAMPLES_ROOT}/.cache/charts/${SUBSTRATE_CHART_VERSION}"
@@ -34,7 +35,7 @@ if ! jq -e --arg version "${SUBSTRATE_VERSION}" '.version == $version' "${SUBSTR
   exit 1
 fi
 SUBSTRATE_API_IMAGE="$(locked_image "ghcr.io/kagent-dev/substrate/ateapi:${SUBSTRATE_VERSION}")"
-SUBSTRATE_WORKER_IMAGE="$(locked_image "ghcr.io/kagent-dev/substrate/ateom-gvisor:${SUBSTRATE_VERSION}")"
+SUBSTRATE_WORKER_IMAGE="$(locked_image "ghcr.io/kagent-dev/substrate/ateworker-gvisor:${SUBSTRATE_VERSION}")"
 LOCAL_REGISTRY_IMAGE="$(locked_image registry:3)"
 
 configure_host_dns() {
@@ -71,11 +72,14 @@ configure_api_dns() {
 }
 
 ensure_cli() {
+  local cli_version
   if [[ ! -x "${BOOK_EXAMPLES_ROOT}/.bin/kubectl-ate" ]]; then
     echo "error: run ./scripts/download-cli.sh or ./scripts/setup-kind.sh first" >&2
     exit 1
   fi
-  if [[ "$("${BOOK_EXAMPLES_ROOT}/.bin/kubectl-ate" --version)" != *"${SUBSTRATE_VERSION} "* ]]; then
+  cli_version="$("${BOOK_EXAMPLES_ROOT}/.bin/kubectl-ate" --version)"
+  if [[ "${cli_version}" != *"${SUBSTRATE_VERSION} "* &&
+        "${cli_version}" != *"commit=${SUBSTRATE_COMMIT}"* ]]; then
     echo "error: kubectl-ate must match ${SUBSTRATE_VERSION}; run ./scripts/download-cli.sh" >&2
     exit 1
   fi

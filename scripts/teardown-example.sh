@@ -21,11 +21,12 @@ if ate get atespace "${BOOK_ATESPACE}" >/dev/null 2>&1; then
 fi
 if kube get namespace "${BOOK_ATESPACE}" >/dev/null 2>&1; then
   kube delete workerpool "${BOOK_WORKER_POOL}" -n "${BOOK_ATESPACE}" --ignore-not-found --timeout=180s
-  kube delete deployment "${BOOK_WORKER_POOL}" repo-workbench-webapp -n "${BOOK_ATESPACE}" --ignore-not-found --timeout=180s
+  kube delete deployment "${BOOK_WORKER_POOL}" repo-workbench-webapp source-control -n "${BOOK_ATESPACE}" --ignore-not-found --timeout=180s
   kube wait --for=delete pod --all -n "${BOOK_ATESPACE}" --timeout=180s
   # Kubernetes 1.35.0 can leave certificate requests with invalid Pod owner references.
   kube delete podcertificaterequests --all -n "${BOOK_ATESPACE}" --ignore-not-found --timeout=60s
   kube delete namespace "${BOOK_ATESPACE}" --ignore-not-found --timeout=180s
 fi
+kube delete namespace workbench-secrets --ignore-not-found --timeout=180s
 kubectl --context "${KUBECTL_CONTEXT}" delete clusterrole,clusterrolebinding repo-workbench-webapp --ignore-not-found
 kubectl --context "${KUBECTL_CONTEXT}" delete role,rolebinding repo-workbench-webapp-token -n ate-system --ignore-not-found

@@ -1,5 +1,7 @@
 # Upgrade plan: kagent Substrate `v0.5.0-alpha2`
 
+> Historical plan: this records the earlier `v0.4.0-alpha1` to `v0.5.0-alpha2` migration. The runnable companion is now pinned to `v0.6.0-alpha3`; see `docs/validation-kagent-v0.6.0-alpha3.md` for the current artifact and regression evidence.
+
 This repository currently installs the kagent-dev Substrate distribution at `v0.4.0-alpha1`. The target is [`v0.5.0-alpha2`](https://github.com/kagent-dev/substrate/releases/tag/v0.5.0-alpha2), published October 8, 2026 from commit `9c4b1fb52212028100fa02c8a7bc4526575ea37e`. This is still an alpha runtime, so the upgrade is successful only when the published artifacts, the bootstrap sequence, and the complete Actor lifecycle work together in a disposable kind cluster.
 
 The important point is that this upgrade changes the bootstrap architecture. Between these releases, the main Helm chart stopped deploying PostgreSQL and the pod-certificate controller, `snapshotConfig.onPause` was removed, the router and egress deployments dropped their idle `atenet` sidecars, and PostgreSQL connections moved to two pre-created Secrets with separate roles and client certificates. The implementation needs to absorb those changes without bringing back a Substrate source checkout or building platform components locally.

@@ -2,6 +2,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: book-workbench
+  labels:
+    ate.dev/api-access: "true"
 
 ---
 
@@ -15,6 +17,10 @@ metadata:
 spec:
   replicas: 1
   workerImage: __WORKER_IMAGE__
+  sandboxClasses:
+  - name: gvisor
+    configRef:
+      name: gvisor-default
   template:
     resources:
       limits:
@@ -127,6 +133,8 @@ spec:
           value: repo-workbench
         - name: ACTOR_PREFIX
           value: repo-workbench
+        - name: SOURCE_CONTROL_URL
+          value: http://source-control.book-workbench.svc.cluster.local
         ports:
         - containerPort: 80
         readinessProbe:
@@ -144,6 +152,89 @@ metadata:
 spec:
   selector:
     app: repo-workbench-webapp
+  ports:
+  - port: 80
+    targetPort: 80
+
+---
+
+# The credential store the platform operator grants to the book-workbench
+# Atespace. Setup places the account token here; no Actor can read it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workbench-secrets
+
+---
+
+# A stand-in internal source-control service. It requires the account token
+# and can verify a Substrate-minted Actor JWT against the in-cluster IdP.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: source-control
+  namespace: book-workbench
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: source-control
+  template:
+    metadata:
+      labels:
+        app: source-control
+    spec:
+      containers:
+      - name: source-control
+        image: __SOURCE_CONTROL_IMAGE__
+        env:
+        - name: TOKEN_FILE
+          value: /run/source-control/token
+        - name: ACCOUNT_NAME
+          value: repo-workbench-bot
+        - name: ACTOR_JWT_ISSUER
+          value: https://idp.ate-system.svc
+        - name: ACTOR_JWT_AUDIENCE
+          value: source-control.book-workbench.svc.cluster.local
+        - name: ACTOR_JWT_CA_FILE
+          value: /run/idp-trust/trust-bundle.pem
+        ports:
+        - containerPort: 80
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 80
+        volumeMounts:
+        - name: account-token
+          mountPath: /run/source-control
+          readOnly: true
+        - name: idp-trust
+          mountPath: /run/idp-trust
+          readOnly: true
+      volumes:
+      - name: account-token
+        secret:
+          secretName: source-control-token
+      - name: idp-trust
+        projected:
+          sources:
+          - clusterTrustBundle:
+              signerName: servicedns.podcert.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: source-control
+  namespace: book-workbench
+spec:
+  selector:
+    app: source-control
   ports:
   - port: 80
     targetPort: 80

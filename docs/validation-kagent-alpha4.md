@@ -1,56 +1,46 @@
-# Validation: kagent-dev Substrate v0.4.0-alpha1
+# Validation: kagent-dev Substrate v0.5.0-alpha4
 
-Validated on October 6, 2026, using macOS AMD64, Docker Desktop, and a single-node Linux AMD64 kind cluster named `book-workbench-alpha4`. Existing `substrate` and `book-workbench` clusters were retained. ARM64 and WSL2 were not exercised end to end.
+Validated on October 14, 2026, using macOS 15.7.7 on AMD64, Docker Desktop 29.8.0, kind 0.31.0, and a fresh single-node Linux AMD64 Kubernetes 1.35.0 cluster named `book-alpha4-validation-20261014-3`. ARM64, Linux/WSL2 hosts, browsers, and GitHub-hosted CI were not exercised.
 
 ## Runtime
 
-- Release: [kagent-dev/substrate v0.4.0-alpha1](https://github.com/kagent-dev/substrate/releases/tag/v0.4.0-alpha1), commit `c2e2e130606db615a553421b6352e47f49860870`.
-- Charts: published `substrate-crds` and `substrate` OCI charts, version `0.4.0-alpha1`.
-- CLI: released host and Linux binaries, verified against `scripts/cli-checksums.json`.
-- Worker: published gVisor image pinned by digest in `scripts/lib.sh`.
-- Kubernetes: kind node image `v1.35.0`, pinned by digest in `scripts/lib.sh`.
-- Only the companion agent and web application images were built locally. No Substrate sources or binaries were built, and no images were published externally.
+- Release: [kagent-dev/substrate v0.5.0-alpha4](https://github.com/kagent-dev/substrate/releases/tag/v0.5.0-alpha4), commit `a7310e83a9d30f2cb96b23e96f3541c50c62e24e`.
+- Charts: published `substrate-crds`, `substrate-podcert`, and `substrate` OCI charts, version `0.5.0-alpha4`, with archive checksums and OCI digests recorded in `scripts/runtime-lock.json`.
+- CLI: all four released host/Linux binaries were downloaded, checksum-verified, and recorded in `scripts/cli-checksums.json`. The published binaries report a pseudo-version and the release commit, so `ensure_cli` accepts the exact commit embedded in the checksum-verified binary.
+- Images: the seven released Substrate images used by the lab, including `objectstore-plugin` and `ateom-gvisor`, are pinned to their multi-platform index digests. The chart's pinned agentgateway image and the third-party lab images remain locked as well.
+- Only the companion agent and web application images were built locally. No Substrate source checkout, Go compiler, or runtime image build was required.
 
 ## Checks
 
-The final setup completed on a freshly recreated test cluster. The deployed verifier passed on that fresh installation:
+The complete disposable runner passed:
 
 ```shell
-KIND_CLUSTER_NAME=book-workbench-alpha4 ./scripts/setup-kind.sh --recreate
-KIND_CLUSTER_NAME=book-workbench-alpha4 ./scripts/verify-example.sh
-python3 -m unittest discover -s tests -v
+KIND_CLUSTER_NAME=book-alpha4-validation-20261014-3 ./scripts/test-lab.sh
 ```
 
-All 14 companion tests passed, including checksum failure/cache handling, context isolation, image-reference validation, and cleanup ordering. The corrected teardown completed without manual intervention; the demo was then redeployed with an empty Atespace.
+All 39 unit and backend HTTP tests passed. Setup verified the downloaded CLI and charts, rendered every chart image through the digest lock, installed PostgreSQL and the certificate controller, and checked both object-store plugin sidecars. The control provider ran beside the API server, and the node provider ran beside atelet. The `generic-worker` WorkerPool resolved its `gvisor` sandbox class to `gvisor-default` before the `ActorTemplate` was created.
 
-The current book walkthrough was also executed against this release:
+The expanded stateful verifier passed the Chapter 3 setup and walkthrough: locked runtime identity, one ready gVisor Worker, a ready MEMORY template, two initially suspended Actors, independent identity and repository state, stale-step rejection, Worker reuse, suspend/resume restoration, and the exact step 6/step 1 handoff into Chapter 4. It exercised the section 3.7 application actions through the backend while intentionally skipping DOM/browser interaction.
 
-| Chapter | Verified behavior |
-| --- | --- |
-| 3 | WorkerPool and template inspection; two independent Actors; unchanged Worker Pod across suspend/resume; restored workflow position; browser file, diff, report, and passing-test views |
-| 4 | Direct resume fails when capacity is occupied; routed request times out with 504; parked request succeeds after capacity is released; Worker Pod loss marks an Actor crashed; revert/resume on a replacement Pod preserves UID and restores the saved step, losing unsaved progress |
-| 5 | Full snapshot files; Data restore preserves the repair and resets process progress; Full pause/resume; paused-to-suspended Data conversion; tagged snapshot starts another Actor at step 6; tag and Actor deletion |
-| 6 | Stable Actor UID across suspend/resume; placement inspection; HTTP policy creation/readback; admission and readback of the illustrative credential-header replacement manifest |
+From that preserved state, Chapters 4–6 passed capacity exhaustion, default parking timeout, parked-request handoff, Worker loss and revert/resume, MEMORY/VOLUMES snapshot contents, Pause/Resume behavior, Tag forks and snapshot deletion, the Chapter 5 reset into Chapter 6, UID preservation, HTTP policy readback, and credential-effect admission.
 
-The companion has no outbound-request endpoint. Outbound enforcement, TLS interception, and credential delivery were not exercised by the demo. Their chapter descriptions were checked against the tagged API schema, published chart configuration, and its pinned AgentGateway source revision `50999825cb55904801f7fd6b18b865179d0d50c4`.
+Alpha4 no longer exposes `ACTOR_STATE_PAUSED` or `ACTOR_STATE_PAUSING`. The regression verified that Pause produces `ACTOR_STATE_SUSPENDED`, a latest snapshot with `locality` and no durable copy, an `assignedNode` matching that locality, and no `workerAssignment`. Suspend produced a completed durable snapshot with the Worker released. MEMORY Pause preserved the process state; VOLUMES Pause and Suspend preserved the repaired files and restarted process state.
 
-## Automated regression run
-
-A fresh disposable cluster, `book-ci-local-20261006`, passed `scripts/test-lab.sh` on the same macOS AMD64/Docker Desktop host. All 22 unit tests passed. The deployed demo and Chapter 4–6 regression suites passed, including capacity exhaustion and parking, Full/Data restoration, pause/resume, tag forks and snapshot deletion, Worker loss and recovery, UID preservation, and HTTP policy admission/readback. Credential-header replacement admission/readback also passed in a separate focused check after it was added to the suite.
-
-The runner collected diagnostics, completed teardown, deleted its cluster, and restored the original `kind-substrate` context. The preexisting clusters remained available.
-
-The Linux GitHub Actions workflow passes `actionlint` validation. It has not run on a GitHub-hosted runner; the companion checkout has no configured Git remote. Linux-host and Windows/WSL2 validation remain pending. The Linux tool installer has not yet been exercised on either target host. See [Testing the book lab](testing.md) for the maintained commands and coverage limits.
+Each runner collected bounded diagnostics, removed its Actors and namespace, deleted its disposable cluster, and restored the previous Kubernetes context. The successful result is under `.test-results/book-alpha4-validation-20261014-3/` in the local working tree.
 
 ## Corrections discovered during validation
 
-- Bootstrap must give the precreated Pod certificate controller namespace the Helm ownership metadata expected by the platform chart.
-- Worker placement no longer needs a source-version node label.
-- The released CLI prints `WORKER IPS` and takes an egress-policy manifest instead of `--hostnames`.
-- The released egress API uses protocol-specific hostname/port rules and credential `replaceHeaders` effects. It chooses the most specific rule rather than the first rule.
-- The chart configures HTTPS interception; the repository task does not install its CA or make outbound calls.
-- Kubernetes 1.35.0 left a PodCertificateRequest with an invalid `core/v1` Pod owner reference and namespace cleanup stalled. This matches [Kubernetes issue 136890](https://github.com/kubernetes/kubernetes/issues/136890). Teardown now deletes the demo workloads, waits for their Pods, and removes their certificate requests through the normal API before deleting the namespace.
+Alpha4 adds a default-deny ingress policy to `ate-system`. An in-cluster API client must run in a namespace labeled `ate.dev/api-access=true`. Without that label, existing pooled connections can make the failure look intermittent while a new connection to another API server Pod times out. The companion now labels `book-workbench`, and a unit test keeps that requirement in the platform manifest.
 
-## Follow-up
+Kubernetes Deployment readiness is not the same as Substrate Worker readiness after a Worker Pod is replaced. The recovery regression now waits until the replacement Worker is registered as `WORKER_STATE_ACTIVE` before resuming an Actor. This removes a race where the API correctly returned `ResourceExhausted` before the replacement Worker had published capacity.
 
-Publish the two companion demo images for Linux AMD64 and ARM64 to the author's chosen registry, pin their digests, and switch the default setup to pull them. Image publication is intentionally deferred; `BOOK_AGENT_IMAGE` and `BOOK_WEBAPP_IMAGE` already permit testing that path together.
+## Manuscript alignment
+
+- Chapter 5 must stop treating `PAUSED` as an Actor state. A paused Actor is now identified by the shape of its latest snapshot and its retained node assignment.
+- Chapter 5 can mention alpha4's internal `UploadConfig`, `PromoteSnapshot`, snapshot reports, and public `ReportActorSnapshotState` RPC only with a caveat: background deferred upload, persistent snapshot tracking, response state population, and the reporting handler are not implemented in this release.
+- Chapter 6 should add the API-access namespace label to the network boundary discussion. The label permits network traffic to the API server; authentication and OpenFGA authorization remain separate checks.
+- Runtime-compatible scheduling, local-first restore fallback, the completed snapshot tracker, fail-closed authorization registry, policy-aware DNS enforcement, router-to-atunnel mTLS, and static-mTLS ingress installation remain upstream-only and must not be presented as alpha4 behavior.
+
+## Remaining coverage
+
+The browser workflow was intentionally skipped. The API and lifecycle paths behind it passed, but New run, Next step, suspend/resume, the file and diff panels, report display, and deletion still need a separate browser check. Linux/WSL2, ARM64, and GitHub-hosted Linux runs also remain pending.

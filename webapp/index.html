@@ -198,6 +198,8 @@
           <div class="actions">
             <button id="next-step">Next step</button>
             <button id="fast-forward" class="secondary">Fast-forward</button>
+            <button id="publish" class="secondary" title="Send AGENT_REPORT.md to the source-control service with placeholder credentials">Publish report</button>
+            <label class="subtle" title="Also send a placeholder Actor-Assertion header for the gateway to replace with an Actor JWT"><input id="assert-actor" type="checkbox"> Assert Actor</label>
             <button id="suspend" class="secondary">Suspend</button>
             <button id="delete" class="danger">Delete</button>
           </div>
@@ -343,6 +345,31 @@
       }
     }
 
+    async function publishReport() {
+      if (busy || !selectedName || !detail) return;
+      busy = true;
+      showError("");
+      render();
+      try {
+        const body = await request(`/api/actors/${encodeURIComponent(selectedName)}/publish`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({assertActor: el("assert-actor").checked}),
+        });
+        detail = body.state;
+        const outcome = body.publish;
+        showNotice(outcome.error
+          ? `Publish attempt ${outcome.attempt} failed inside the Actor: ${outcome.error}`
+          : `Publish attempt ${outcome.attempt} returned HTTP ${outcome.status} from the source-control service.`);
+        await loadActors();
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        busy = false;
+        render();
+      }
+    }
+
     async function suspendActor() {
       if (busy || !selectedName) return;
       busy = true;
@@ -436,6 +463,8 @@
       const terminal = !detail || detail.phase === "done" || detail.phase === "failed";
       el("next-step").disabled = busy || terminal;
       el("fast-forward").disabled = busy || terminal;
+      el("publish").disabled = busy || !detail || !detail.canPublish;
+      el("assert-actor").disabled = busy || !detail || !detail.canPublish;
       el("suspend").disabled = busy || actor.lifecycle === "suspended" || actor.lifecycle === "local";
       el("delete").disabled = busy || actor.lifecycle === "local";
       el("next-step").textContent = actor.lifecycle === "suspended" ? "Resume & next step" : "Next step";
@@ -530,6 +559,7 @@
     });
     el("next-step").addEventListener("click", () => actorAction("advance"));
     el("fast-forward").addEventListener("click", () => actorAction("fast-forward"));
+    el("publish").addEventListener("click", publishReport);
     el("suspend").addEventListener("click", suspendActor);
     el("delete").addEventListener("click", deleteActor);
     document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => {

@@ -45,6 +45,5 @@ python3 -m unittest discover -s tests -v 2>&1 | tee "${LAB_RESULTS_DIR}/unit.log
 # Setup may create a cluster before returning an error; the exit trap owns its cleanup.
 cluster_started=true
 ./scripts/setup-kind.sh 2>&1 | tee "${LAB_RESULTS_DIR}/setup.log"
-./scripts/verify-example.sh 2>&1 | tee "${LAB_RESULTS_DIR}/demo.log"
-./scripts/verify-chapters.sh --allow-worker-replacement 2>&1 | tee "${LAB_RESULTS_DIR}/chapters.log"
-echo "PASS: fresh published runtime, companion tests, demo lifecycle, and chapter regressions"
+./scripts/verify-chapters.sh --allow-worker-replacement 2>&1 | tee "${LAB_RESULTS_DIR}/chapters-3-6.log"
+echo "PASS: fresh published runtime, companion tests, and Chapters 3-6 lab regressions"

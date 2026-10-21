@@ -126,7 +126,9 @@ class CliActorManager:
     def suspend_actor(self, name: str) -> dict[str, object]:
         if not self.validates_name(name):
             raise ValueError("invalid Actor name")
-        actor = self._run("suspend", "actor", name, "--atespace", self.atespace)
+        actor = self._run(
+            "suspend", "actor", name, "--atespace", self.atespace, "--mode", "sync"
+        )
         return self._simplify(actor)
 
     def delete_actor(self, name: str) -> None:
@@ -169,6 +171,7 @@ class LocalActorManager:
 class WebAppHandler(BaseHTTPRequestHandler):
     index_html: bytes
     agent_url: str
+    source_control_url: str = ""
     atespace: str
     manager: object
 
@@ -214,6 +217,21 @@ class WebAppHandler(BaseHTTPRequestHandler):
         except (TimeoutError, URLError) as exc:
             self._json_error(HTTPStatus.BAD_GATEWAY, f"Actor request failed: {exc}")
 
+    def _call_source_control(self, path: str) -> None:
+        # Read-only inspection of what the service received. The web app holds no
+        # account token and the listing never includes one.
+        if not self.source_control_url:
+            self._json_error(HTTPStatus.NOT_FOUND, "no source-control service is configured")
+            return
+        url = urljoin(self.source_control_url.rstrip("/") + "/", path.lstrip("/"))
+        try:
+            with urlopen(Request(url, headers={"Accept": "application/json"}), timeout=30) as response:
+                self._write(response.status, response.headers.get_content_type(), response.read())
+        except HTTPError as exc:
+            self._write(exc.code, exc.headers.get_content_type(), exc.read())
+        except (TimeoutError, URLError) as exc:
+            self._json_error(HTTPStatus.BAD_GATEWAY, f"source-control request failed: {exc}")
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/":
@@ -227,6 +245,9 @@ class WebAppHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, {"actors": self.manager.list_actors()})
             except ControlPlaneError as exc:
                 self._json_error(HTTPStatus.BAD_GATEWAY, f"control-plane request failed: {exc}")
+            return
+        if path == "/api/source-control/pulls":
+            self._call_source_control("/pulls")
             return
         route = self._actor_route()
         if route and route[1] == "state":
@@ -244,7 +265,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
             if route and route[1] == "suspend":
                 self._json(HTTPStatus.OK, {"actor": self.manager.suspend_actor(route[0])})
                 return
-            if route and route[1] in {"advance", "fast-forward"}:
+            if route and route[1] in {"advance", "fast-forward", "publish"}:
                 self._call_actor(route[0], f"/api/{route[1]}")
                 return
         except ValueError as exc:
@@ -291,6 +312,7 @@ def run_server() -> None:
     port = int(os.environ.get("PORT", "80"))
     WebAppHandler.index_html = (app_dir / "index.html").read_bytes()
     WebAppHandler.agent_url = os.environ.get("AGENT_URL", "http://atenet-router.ate-system.svc.cluster.local")
+    WebAppHandler.source_control_url = os.environ.get("SOURCE_CONTROL_URL", "")
     WebAppHandler.manager = build_manager()
     WebAppHandler.atespace = WebAppHandler.manager.atespace
     server = ThreadingHTTPServer(("0.0.0.0", port), WebAppHandler)

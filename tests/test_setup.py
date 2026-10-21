@@ -63,6 +63,16 @@ exit 1
         result = self.run_script("download-cli.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_release_commit_identifies_a_cli_with_a_pseudo_version(self):
+        cli = self.bin / "kubectl-ate"
+        release_commit = "e2fc0fa9f77ab5fc09eb01b43ccd74bd84c67c71"
+        cli.write_text(f'#!/bin/sh\necho "kubectl-ate version v0.0.0-test commit={release_commit}-dirty"\n')
+        cli.chmod(0o755)
+        result = subprocess.run(["bash", "-c", 'source "$1"; ensure_cli', "bash",
+                                str(self.root / "scripts/lib.sh")], env=self.env,
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_corrupt_download_does_not_replace_existing_cli(self):
         (self.bin / "kubectl-ate").write_text("old CLI")
         self.payload.write_text("corrupt download")
@@ -141,14 +151,17 @@ exit 1
         self.write_command("kubectl", "#!/bin/sh\nexit 98\n")
         result = self.run_script("deploy-example.sh", env=dict(self.env, BOOK_AGENT_IMAGE="agent:tag"))
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("set BOOK_AGENT_IMAGE and BOOK_WEBAPP_IMAGE together", result.stderr)
+        self.assertIn("set BOOK_AGENT_IMAGE, BOOK_WEBAPP_IMAGE, and BOOK_SOURCE_CONTROL_IMAGE together",
+                      result.stderr)
         result = self.run_script("deploy-example.sh", env=dict(self.env, BOOK_AGENT_IMAGE="agent:tag",
-                                                              BOOK_WEBAPP_IMAGE="webapp:tag"))
+                                                              BOOK_WEBAPP_IMAGE="webapp:tag",
+                                                              BOOK_SOURCE_CONTROL_IMAGE="sc:tag"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("demo image must be pinned by digest", result.stderr)
 
-    def test_platform_bootstrap_order_matches_alpha2_dependencies(self):
+    def test_platform_bootstrap_order_matches_alpha3_dependencies(self):
         setup = (ROOT / "scripts/setup-kind.sh").read_text()
+        platform = (ROOT / "manifests/platform.yaml.tmpl").read_text()
         markers = [
             "helm upgrade --install substrate-crds",
             "for name in service-dns-ca-pool pod-identity-ca-pool postgres-ca-pool",
@@ -162,6 +175,26 @@ exit 1
         self.assertEqual(positions, sorted(positions))
         self.assertNotIn("meta.helm.sh/release-name=substrate", setup)
         self.assertIn('--post-renderer "${BOOK_EXAMPLES_ROOT}/scripts/pin-images.sh"', setup)
+        self.assertIn('ate.dev/api-access: "true"', platform)
+        template = (ROOT / "manifests/actor-template.yaml.tmpl").read_text()
+        self.assertNotIn("sandboxConfig:", template)
+        self.assertIn("workerSelector:", template)
+
+    def test_credential_brokering_lab_pieces_are_wired_together(self):
+        values = (ROOT / "manifests/substrate-values.yaml").read_text()
+        self.assertIn("atespace: book-workbench", values)
+        self.assertIn("allowedNamespaces: [workbench-secrets]", values)
+        platform = (ROOT / "manifests/platform.yaml.tmpl").read_text()
+        self.assertIn("name: workbench-secrets", platform)
+        self.assertIn("secretName: source-control-token", platform)
+        self.assertIn("signerName: servicedns.podcert.ate.dev/identity", platform)
+        template = (ROOT / "manifests/actor-template.yaml.tmpl").read_text()
+        self.assertIn("http://source-control.book-workbench.svc.cluster.local/repos/repo-workbench/pulls", template)
+        deployment = (ROOT / "scripts/deploy-example.sh").read_text()
+        self.assertIn("git-token -n workbench-secrets", deployment)
+        self.assertIn("source-control-token", deployment)
+        teardown = (ROOT / "scripts/teardown-example.sh").read_text()
+        self.assertIn("delete namespace workbench-secrets", teardown)
 
     def test_golden_snapshot_wait_allows_one_cold_asset_retry(self):
         deployment = (ROOT / "scripts/deploy-example.sh").read_text()

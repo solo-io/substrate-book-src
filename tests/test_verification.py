@@ -14,6 +14,19 @@ with patch.dict(os.environ, {"KUBECTL_CONTEXT": "kind-unused-test"}):
 
 
 class VerificationTest(unittest.TestCase):
+    def test_rustfs_internal_files_are_normalized_to_snapshot_objects(self):
+        root = "/data/ate-snapshots/book-workbench/actor/snapshot"
+        files = "\n".join([
+            root + "/manifest.json/xl.meta",
+            root + "/checkpoint.img.zstd/xl.meta",
+            root + "/pages.img.zstd/upload-id/part.1",
+            root + "/fs/fscheckpoint.pb.zstd/xl.meta",
+        ])
+        self.assertEqual(verify_chapters.snapshot_object_names(root, files), {
+            "manifest.json", "checkpoint.img.zstd", "pages.img.zstd",
+            "fs/fscheckpoint.pb.zstd",
+        })
+
     def test_customized_router_is_rejected_before_test_changes(self):
         with self.assertRaisesRegex(RuntimeError, "default parking"):
             verify_chapters.configured_parking("substrateIngress:\n  requestParking:\n    budget: 15s\n", "30s")
@@ -31,6 +44,17 @@ class VerificationTest(unittest.TestCase):
         command.assert_called_once_with(str(verify_deployed.ROOT / ".bin/kubectl-ate"),
                                         "--context", verify_deployed.CONTEXT,
                                         "resume", "actor", "repo-workbench-1", "-a", "book-workbench")
+
+    def test_lifecycle_suspend_defaults_to_sync_and_allows_async(self):
+        with patch.object(verify_chapters.lab, "ate", return_value={}) as command:
+            verify_chapters.lifecycle("suspend", "repo-workbench-1")
+            verify_chapters.lifecycle("suspend", "repo-workbench-1", mode="async")
+        self.assertEqual(command.call_args_list[0].args,
+                         ("suspend", "actor", "repo-workbench-1", "-a", "book-workbench",
+                          "--mode", "sync"))
+        self.assertEqual(command.call_args_list[1].args,
+                         ("suspend", "actor", "repo-workbench-1", "-a", "book-workbench",
+                          "--mode", "async"))
 
     def test_router_config_waits_for_hot_reload_without_restarting_the_pod(self):
         config = "routes: []\n"

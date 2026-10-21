@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 
 FIXED_SLUGIFY = '''import re
@@ -39,6 +41,10 @@ STEP_TITLES = (
     "Verify the test suite",
     "Review the changes",
 )
+# Publishing is an action available once the report exists; it is not a step.
+REPORT_STEP = 5
+PLACEHOLDER = "placeholder"
+ASSERTION_HEADER = "Actor-Assertion"
 
 
 class StepConflict(RuntimeError):
@@ -50,16 +56,18 @@ def utc_now() -> str:
 
 
 class WorkbenchState:
-    def __init__(self, workspace: Path, seed: Path, actor_info: Path):
+    def __init__(self, workspace: Path, seed: Path, actor_info: Path, source_control_url: str = ""):
         self.workspace = workspace
         self.seed = seed
         self.actor_info = actor_info
+        self.source_control_url = source_control_url
         self.lock = threading.RLock()
         self.phase = "ready"
         self.current_step = 0
         self.state_revision = 0
         self.last_test_output = "Tests have not run yet."
         self.transcript: list[dict[str, object]] = []
+        self.publications: list[dict[str, object]] = []
         self._initialize_workspace()
         self._record(
             "system",
@@ -259,6 +267,71 @@ class WorkbenchState:
                 self._advance_locked()
             return self.snapshot()
 
+    def publish(self, assert_actor: bool = False) -> dict[str, object]:
+        """Send AGENT_REPORT.md to the source-control service with placeholder credentials.
+
+        The Actor never holds the account token. It sends ``Authorization: placeholder``
+        and relies on the egress gateway to replace that value when its EgressPolicy
+        says so. With ``assert_actor`` it also sends a placeholder Actor-Assertion
+        header for the gateway to replace with a Substrate-minted Actor JWT.
+        """
+        with self.lock:
+            if self.current_step < REPORT_STEP:
+                raise StepConflict(
+                    f"AGENT_REPORT.md does not exist yet; the Actor is at step {self.current_step} of {REPORT_STEP}"
+                )
+            if not self.source_control_url:
+                raise StepConflict("this Actor has no source-control service configured")
+            report = (self.workspace / "AGENT_REPORT.md").read_text(encoding="utf-8")
+            headers = {"Content-Type": "application/json", "Authorization": PLACEHOLDER}
+            if assert_actor:
+                headers[ASSERTION_HEADER] = PLACEHOLDER
+            payload = {"title": "Repair slugify and add the agent report", "body": report}
+            attempt = len(self.publications) + 1
+            outcome: dict[str, object] = {
+                "attempt": attempt,
+                "time": utc_now(),
+                "url": self.source_control_url,
+                "sentHeaders": {name: value for name, value in headers.items() if name != "Content-Type"},
+                "status": None,
+                "response": None,
+                "error": None,
+            }
+            request = Request(
+                self.source_control_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            try:
+                with urlopen(request, timeout=30) as response:
+                    outcome["status"] = response.status
+                    outcome["response"] = self._decode_body(response.read())
+            except HTTPError as exc:
+                outcome["status"] = exc.code
+                outcome["response"] = self._decode_body(exc.read())
+            except (TimeoutError, URLError, OSError) as exc:
+                outcome["error"] = f"{type(exc).__name__}: {exc}"
+            self.publications.append(outcome)
+            sent = "\n".join(f"{name}: {value}" for name, value in outcome["sentHeaders"].items())
+            rendered = f"POST {self.source_control_url}\n{sent}\n\n"
+            if outcome["error"]:
+                rendered += f"Request failed: {outcome['error']}"
+                self._record("error", f"Publish attempt {attempt} failed", rendered)
+            else:
+                rendered += f"HTTP {outcome['status']}\n{json.dumps(outcome['response'], indent=2)}"
+                kind = "tool" if outcome["status"] == 201 else "error"
+                self._record(kind, f"Publish attempt {attempt}: HTTP {outcome['status']}", rendered)
+            return {"publish": outcome, "state": self.snapshot()}
+
+    @staticmethod
+    def _decode_body(raw: bytes) -> object:
+        text = raw.decode("utf-8", errors="replace")
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+
     def snapshot(self) -> dict[str, object]:
         with self.lock:
             steps = []
@@ -281,6 +354,8 @@ class WorkbenchState:
                 "nextStep": STEP_TITLES[self.current_step] if self.current_step < len(STEP_TITLES) else None,
                 "stateRevision": self.state_revision,
                 "steps": steps,
+                "canPublish": self.current_step >= REPORT_STEP and bool(self.source_control_url),
+                "publications": list(self.publications),
                 "transcript": list(self.transcript),
                 "files": self._files(),
                 "diff": self._diff(),
@@ -324,11 +399,17 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path not in {"/api/advance", "/api/fast-forward"}:
+        if path not in {"/api/advance", "/api/fast-forward", "/api/publish"}:
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
         try:
             body = self._json_body()
+            if path == "/api/publish":
+                assert_actor = body.get("assertActor", False)
+                if not isinstance(assert_actor, bool):
+                    raise ValueError("assertActor must be a boolean")
+                self._json(HTTPStatus.OK, self.state.publish(assert_actor))
+                return
             expected_step = body.get("expectedStep")
             if not isinstance(expected_step, int) or isinstance(expected_step, bool):
                 raise ValueError("expectedStep must be an integer")
@@ -353,7 +434,8 @@ def run_server() -> None:
     seed = Path(os.environ.get("SEED_DIR", "/opt/repo-workbench-seed"))
     actor_info = Path(os.environ.get("ACTOR_INFO_DIR", "/run/ate"))
     port = int(os.environ.get("PORT", "80"))
-    WorkbenchHandler.state = WorkbenchState(workspace, seed, actor_info)
+    source_control_url = os.environ.get("SOURCE_CONTROL_URL", "")
+    WorkbenchHandler.state = WorkbenchState(workspace, seed, actor_info, source_control_url)
     server = ThreadingHTTPServer(("0.0.0.0", port), WorkbenchHandler)
     print(f"Repo Workbench agent API listening on :{port}", flush=True)
     try:

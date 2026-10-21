@@ -86,6 +86,7 @@ class WebAppTest(unittest.TestCase):
         self.manager = FakeActorManager()
         SERVER.WebAppHandler.index_html = b"<html>Repo Workbench</html>"
         SERVER.WebAppHandler.agent_url = f"http://127.0.0.1:{self.actor_server.server_port}"
+        SERVER.WebAppHandler.source_control_url = f"http://127.0.0.1:{self.actor_server.server_port}/source-control"
         SERVER.WebAppHandler.atespace = "book-workbench"
         SERVER.WebAppHandler.manager = self.manager
         self.web_server = ThreadingHTTPServer(("127.0.0.1", 0), SERVER.WebAppHandler)
@@ -133,6 +134,21 @@ class WebAppTest(unittest.TestCase):
             body={"expectedStep": 0},
         )
         self.assertEqual(FakeActorHandler.requested_path, "/api/advance")
+
+        self.json_request(
+            "/api/actors/repo-workbench-1/publish",
+            method="POST",
+            body={"assertActor": True},
+        )
+        self.assertEqual(FakeActorHandler.requested_path, "/api/publish")
+        self.assertEqual(FakeActorHandler.target_actor, "book-workbench/repo-workbench-1")
+
+    def test_source_control_listing_is_proxied_without_naming_an_actor(self):
+        FakeActorHandler.target_actor = None
+        status, _ = self.json_request("/api/source-control/pulls")
+        self.assertEqual(status, 200)
+        self.assertEqual(FakeActorHandler.requested_path, "/source-control/pulls")
+        self.assertIsNone(FakeActorHandler.target_actor)
 
     def test_create_suspend_and_delete_use_the_manager(self):
         status, created = self.json_request("/api/actors", method="POST")

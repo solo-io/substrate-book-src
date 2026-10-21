@@ -18,6 +18,25 @@ EXPOSE 80
 
 CMD ["python3", "/app/server.py"]
 
+FROM python:3.13-slim AS source-control
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir "PyJWT==2.10.1" "cryptography==44.0.1"
+
+WORKDIR /app
+
+COPY source-control/server.py /app/server.py
+
+ENV PORT=80 \
+    TOKEN_FILE=/run/source-control/token \
+    ACCOUNT_NAME=repo-workbench-bot
+
+EXPOSE 80
+
+CMD ["python3", "/app/server.py"]
+
 FROM python:3.13-slim AS webapp
 ARG TARGETARCH
 
@@ -35,6 +54,7 @@ ENV PORT=80 \
     ATE_CLI=/usr/local/bin/kubectl-ate \
     ATE_ENDPOINT=api.ate-system.svc:443 \
     ATE_KUBECONFIG=/app/kubeconfig.yaml \
+    SOURCE_CONTROL_URL=http://source-control.book-workbench.svc.cluster.local \
     BOOK_ATESPACE=book-workbench \
     BOOK_TEMPLATE=repo-workbench \
     ACTOR_PREFIX=repo-workbench
