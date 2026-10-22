@@ -7,13 +7,19 @@
 # It assumes setup-kind.sh already installed Substrate and deployed the
 # example. It never installs, upgrades, or deletes the cluster, and it refuses
 # a cluster that is not this release's demo lab.
+#
+# --show-secrets makes the source-control service log and record the bearer
+# token and Actor JWT it receives as is (live-demo.sh uses it). Without it, the
+# service shows only token fingerprints.
 
 set -o errexit -o nounset -o pipefail
 source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 for command in kubectl jq openssl shasum; do require_command "${command}"; done
 ensure_cli
-if [[ $# -gt 0 ]]; then echo "usage: KIND_CLUSTER_NAME=<lab> $0" >&2; exit 2; fi
+show_secrets=false
+if [[ "${1:-}" == --show-secrets ]]; then show_secrets=true; shift; fi
+if [[ $# -gt 0 ]]; then echo "usage: KIND_CLUSTER_NAME=<lab> $0 [--show-secrets]" >&2; exit 2; fi
 
 fail() { echo "error: $*" >&2; exit 1; }
 
@@ -73,6 +79,11 @@ fi
 fingerprint="$(printf '%s' "${store_token}" | shasum -a 256 | cut -c1-16)"
 unset store_token service_token
 
+if [[ "${show_secrets}" == true ]]; then
+  kube set env deployment/source-control -n "${BOOK_ATESPACE}" DEMO_SHOW_SECRETS=1 >/dev/null
+else
+  kube set env deployment/source-control -n "${BOOK_ATESPACE}" DEMO_SHOW_SECRETS- >/dev/null
+fi
 echo "Restarting the source-control service to clear its pull history and pick up the token..."
 kube rollout restart deployment/source-control -n "${BOOK_ATESPACE}" >/dev/null
 kube rollout status deployment/source-control -n "${BOOK_ATESPACE}" --timeout=180s >/dev/null

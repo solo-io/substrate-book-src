@@ -16,7 +16,8 @@
 #
 # Inside tmux it opens a pane that follows the source-control service's request
 # log (scripts/demo-logs.sh), so the audience sees each request arrive with the
-# dummy key or the injected token. --logs off skips it.
+# dummy key, the real injected token, or the decoded Actor JWT. Prep turns on
+# the service's DEMO_SHOW_SECRETS so it logs them as is. --logs off skips it.
 #
 # --check-snippets verifies that the code excerpts still match the source.
 #
@@ -251,12 +252,30 @@ publish_render() {
      else "actor claim  \($d)none: the service only knows the account\($r)" end)' <<<"${result}"
 }
 
-# What the source-control service recorded (never the token itself).
+# What the source-control service recorded: the token it received and, when
+# the Actor's JWT came along, that JWT decoded.
 pulls() {
-  wb /api/source-control/pulls | jq -r --arg fp "${SECRET_FP}" --arg g "${GRN}" --arg y "${YLW}" --arg r "${RST}" '
-    .pulls[-1] // empty |
+  local last
+  last="$(wb /api/source-control/pulls | jq -c '.pulls[-1] // empty')"
+  [[ -n "${last}" ]] || return 0
+  jq -r --arg secret "${SECRET}" --arg g "${GRN}" --arg y "${YLW}" --arg r "${RST}" '
     "PR #\(.number) by account \($y)\(.authenticatedAs)\($r)",
-    "token sha256 \($y)\(.tokenFingerprint)\($r)  \(if .tokenFingerprint == $fp then "\($g)✔ the real token from Secret workbench-secrets/git-token\($r)" else "" end)"'
+    "token  \($y)\(.token)\($r)  \(if .token == $secret then "\($g)✔ the real token from Secret workbench-secrets/git-token\($r)" else "" end)"' <<<"${last}"
+  if jq -e '.actorAssertion' <<<"${last}" >/dev/null; then
+    jwt_decode "$(jq -r '.actorAssertion' <<<"${last}")"
+  fi
+}
+
+# Pretty-print a JWT's header and payload (decoded, not verified).
+jwt_decode() {
+  local part
+  printf 'Actor JWT  %s%s…%s\n' "${YLW}" "${1:0:40}" "${RST}"
+  for part in header payload; do
+    printf '%s%s%s\n' "${GRY}" "${part}" "${RST}"
+    jq -CR --arg part "${part}" '
+      split(".")[if $part == "header" then 0 else 1 end] | gsub("-"; "+") | gsub("_"; "/") |
+      (. + ("=" * ((4 - length % 4) % 4))) | @base64d | fromjson' <<<"$1"
+  done
 }
 
 # Show a policy file, marking lines that are new since the previous one.
@@ -330,7 +349,7 @@ if [[ "${CHECK_SNIPPETS}" == true ]]; then
   echo "code excerpts match the source"
   exit 0
 fi
-for command in kubectl jq shasum; do require_command "${command}"; done
+for command in kubectl jq; do require_command "${command}"; done
 ensure_cli
 
 # ── prep ─────────────────────────────────────────────────────────────────────
@@ -348,7 +367,7 @@ EOF
 
 if [[ "${PREP}" == true ]]; then
   prep_log="$(mktemp -t live-demo-prep)"
-  "${BOOK_EXAMPLES_ROOT}/scripts/prep-credential-demo.sh" >"${prep_log}" 2>&1 &
+  "${BOOK_EXAMPLES_ROOT}/scripts/prep-credential-demo.sh" --show-secrets >"${prep_log}" 2>&1 &
   prep_pid=$!
   spin "resetting the lab: no Actors, fresh source-control, empty gateway cache…" "${prep_pid}"
   if ! wait "${prep_pid}"; then
@@ -363,12 +382,16 @@ elif ! golden_tag_ready >/dev/null; then
   printf '  %s✘ ActorTemplate %s has no stored golden snapshot; run ./scripts/setup-kind.sh%s\n' \
     "${RED}" "${BOOK_TEMPLATE}" "${RST}"
   exit 1
+elif [[ "$(command kubectl --context "${CTX}" get deployment/source-control -n "${NS}" \
+        -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="DEMO_SHOW_SECRETS")].value}')" != 1 ]]; then
+  printf '  %s✘ source-control is not showing secrets; drop --no-prep so prep can turn it on%s\n' "${RED}" "${RST}"
+  exit 1
 elif ate get actor "${A1}" -a "${NS}" >/dev/null 2>&1; then
   printf '  %s✘ %s already exists from an earlier run; drop --no-prep to reset the lab%s\n' "${RED}" "${A1}" "${RST}"
   exit 1
 fi
-SECRET_FP="$(command kubectl --context "${CTX}" get secret git-token -n workbench-secrets -o jsonpath='{.data.token}' |
-  base64 -d | shasum -a 256 | cut -c1-16)"
+SECRET="$(command kubectl --context "${CTX}" get secret git-token -n workbench-secrets -o jsonpath='{.data.token}' |
+  base64 -d)"
 
 # The log pane starts after prep so it follows the fresh source-control Pod.
 if [[ "${LOGS}" != off && -n "${TMUX:-}" ]] && command -v tmux >/dev/null; then
@@ -442,10 +465,12 @@ step 4 "AgentGateway injects the real credential"
 say "Same agent, same dummy key. The gateway replaces the header on the way out."
 say "${GRY}(The platform granted Atespace ${NS} the Secrets in namespace workbench-secrets.)${RST}"
 show_policy demo/policies/2-inject.yaml demo/policies/1-allow.yaml
+say "The real token, in a Secret the agent can't read:"
+run "kubectl get secret git-token -n workbench-secrets -o jsonpath='{.data.token}' | base64 -d; echo"
 apply_policy demo/policies/2-inject.yaml
 EXPECT_ROUTED=true run "actor ${A1} publish"
 if [[ -n "${LOG_PANE}" ]]; then
-  say "The server pane: a real bearer token arrived, and it matches the Secret."
+  say "The server pane: the real bearer token arrived, the one from the Secret."
 else
   say "What the service received:"
   run "pulls"
@@ -460,7 +485,12 @@ say "Ask the gateway to inject a Substrate-signed JWT for this exact Actor:"
 show_policy demo/policies/4-assert.yaml demo/policies/2-inject.yaml
 apply_policy demo/policies/4-assert.yaml
 EXPECT_ROUTED=true run "actor ${A1} publish --assert"
-if [[ -n "${LOG_PANE}" ]]; then say "The server pane: a signed JWT arrived and verified, naming this exact Actor."; fi
+if [[ -n "${LOG_PANE}" ]]; then
+  say "The server pane: a signed JWT arrived and verified, naming this exact Actor."
+else
+  say "What the service received:"
+  run "pulls"
+fi
 run "kubectl ate get actor ${A1} -a ${NS} -o json | jq -r .metadata.uid"
 takeaway "The service verified the signature: this exact Actor, by UID. No secret in the agent."
 pause "finish"

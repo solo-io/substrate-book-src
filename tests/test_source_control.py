@@ -126,6 +126,28 @@ class SourceControlTest(unittest.TestCase):
         for secret in ("account-token-1", "minted-jwt", "secret-but-not-bearer"):
             self.assertNotIn(secret, logged)
 
+    def test_show_secrets_logs_and_records_what_arrived(self):
+        SERVER.SourceControlHandler.state.show_secrets = True
+        self.post({"Authorization": "Bearer account-token-1", "Actor-Assertion": "minted-jwt"})
+        self.post({"Authorization": "secret-but-not-bearer"})
+        records = [json.loads(line) for line in self.log]
+        self.assertEqual(records[0]["authorization"], "Bearer account-token-1")
+        self.assertEqual(records[0]["actorAssertion"], "minted-jwt")
+        self.assertIsNone(records[0]["actorAssertionJwt"])
+        self.assertEqual(records[1]["authorization"], "secret-but-not-bearer")
+        pull = self.pulls()[0]
+        self.assertEqual(pull["token"], "account-token-1")
+        self.assertEqual(pull["actorAssertion"], "minted-jwt")
+
+    def test_jwt_is_decoded_for_the_log(self):
+        def part(value):
+            return SERVER.base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip("=")
+        token = f"{part({'alg': 'ES256'})}.{part({'sub': 'actor/x'})}.c2ln"
+        self.assertEqual(SERVER.decode_jwt(token),
+                         {"header": {"alg": "ES256"}, "payload": {"sub": "actor/x"}, "signature": "c2ln"})
+        self.assertIsNone(SERVER.decode_jwt("placeholder"))
+        self.assertIsNone(SERVER.decode_jwt("a.b.c"))
+
     def test_token_rotation_is_read_from_the_mounted_file(self):
         self.token_file.write_text("account-token-2\n")
         self.assertEqual(self.post({"Authorization": "Bearer account-token-1"})[0], 401)

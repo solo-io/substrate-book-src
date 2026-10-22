@@ -2,13 +2,19 @@
 """A stand-in internal source-control service for the credential brokering demo.
 
 It accepts pull requests only with a bearer token that matches the account token
-mounted from a Kubernetes Secret. It never returns that token. It optionally
-verifies a Substrate-minted Actor JWT presented in a separate header so the
-reader can see what an external service can and cannot learn about the caller.
+mounted from a Kubernetes Secret. It optionally verifies a Substrate-minted
+Actor JWT presented in a separate header so the reader can see what an external
+service can and cannot learn about the caller.
+
+By default it logs and records only token fingerprints. With DEMO_SHOW_SECRETS=1
+(the live demo sets it) it logs and records the credentials it receives as is,
+and the Actor JWT decoded, so an audience can see exactly what arrived. A real
+service never would.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -141,14 +147,30 @@ def describe_presented(value: str | None) -> str | None:
     return f"{len(stripped)} bytes, not shown"
 
 
+def decode_jwt(value: str | None) -> dict[str, object] | None:
+    """Decode a JWT's header and payload for display, without verifying it."""
+    if value is None:
+        return None
+    parts = value.strip().split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        header, payload = (json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+                           for part in parts[:2])
+    except ValueError:
+        return None
+    return {"header": header, "payload": payload, "signature": parts[2]}
+
+
 def print_log(line: str) -> None:
     print(line, flush=True)
 
 
 class SourceControlState:
     def __init__(self, token_file: Path, account: str, verifier: ActorAssertionVerifier | None,
-                 log: Callable[[str], None] = print_log):
+                 log: Callable[[str], None] = print_log, show_secrets: bool = False):
         self.token_file = token_file
+        self.show_secrets = show_secrets
         self.account = account
         self.verifier = verifier
         self.log = log
@@ -176,19 +198,24 @@ class SourceControlState:
 
     def open_pull(self, repo: str, body: dict[str, object], headers: dict[str, str]) -> tuple[HTTPStatus, dict[str, object]]:
         status, response = self._open_pull(repo, body, headers)
+        present = (lambda value: value) if self.show_secrets else describe_presented
+        assertion = headers.get(ASSERTION_HEADER.lower())
         # One JSON line per request: what arrived and what the service decided.
-        self.log(json.dumps({
+        entry = {
             "time": utc_now(),
             "event": "pull_request",
             "repo": repo,
             "status": status.value,
-            "authorization": describe_presented(headers.get("authorization")),
-            "actorAssertion": describe_presented(headers.get(ASSERTION_HEADER.lower())),
+            "authorization": present(headers.get("authorization")),
+            "actorAssertion": present(assertion),
             "error": response.get("error"),
             "authenticatedAs": response.get("authenticatedAs"),
             "number": response.get("number"),
             "actor": response.get("actor"),
-        }))
+        }
+        if self.show_secrets:
+            entry["actorAssertionJwt"] = decode_jwt(assertion)
+        self.log(json.dumps(entry))
         return status, response
 
     def _open_pull(self, repo: str, body: dict[str, object], headers: dict[str, str]) -> tuple[HTTPStatus, dict[str, object]]:
@@ -225,6 +252,9 @@ class SourceControlState:
                 if actor
                 else None,
             }
+            if self.show_secrets:
+                record["token"] = headers["authorization"].partition(" ")[2].strip()
+                record["actorAssertion"] = assertion.strip() if assertion is not None else None
             self.pulls.append(record)
         return HTTPStatus.CREATED, {
             "number": number,
@@ -296,7 +326,8 @@ def build_state() -> SourceControlState:
     verifier = None
     if issuer and audience:
         verifier = ActorAssertionVerifier(issuer, audience, os.environ.get("ACTOR_JWT_CA_FILE") or None)
-    return SourceControlState(token_file, account, verifier)
+    show_secrets = os.environ.get("DEMO_SHOW_SECRETS", "").lower() in {"1", "true", "yes"}
+    return SourceControlState(token_file, account, verifier, show_secrets=show_secrets)
 
 
 def run_server() -> None:

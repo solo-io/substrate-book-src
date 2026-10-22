@@ -219,7 +219,7 @@ class WebAppHandler(BaseHTTPRequestHandler):
 
     def _call_source_control(self, path: str) -> None:
         # Read-only inspection of what the service received. The web app holds no
-        # account token and the listing never includes one.
+        # account token; the demo service records the tokens it received as is.
         if not self.source_control_url:
             self._json_error(HTTPStatus.NOT_FOUND, "no source-control service is configured")
             return
