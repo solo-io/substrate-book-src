@@ -1,6 +1,6 @@
 # Credential brokering walkthrough
 
-A manual, step-by-step run of the Chapter 6 credential brokering demo on the `book-alpha3-cred` lab cluster. Every command names its cluster with `--context`, so your current kube context is never changed. Run everything from the `book-src` directory.
+A manual, step-by-step run of the Chapter 6 credential brokering demo on the `book-v060-cred` lab cluster. Every command names its cluster with `--context`, so your current kube context is never changed. Run everything from the `book-src` directory.
 
 What you are proving: `repo-workbench-1` publishes its `AGENT_REPORT.md` to an internal source-control service that requires a bearer token, and the Actor never holds that token. It sends `Authorization: placeholder`; AgentGateway replaces the value only when the Actor's `EgressPolicy` says so, only for a Secret the platform operator granted to the Atespace, and only on requests that carry the header. A second header source delivers a Substrate-minted Actor JWT that the service verifies.
 
@@ -8,7 +8,7 @@ What you are proving: `repo-workbench-1` publishes its `AGENT_REPORT.md` to an i
 
 ```shell
 cd ~/go/src/github.com/agent-substrate/book-src
-export CTX=kind-book-alpha3-cred
+export CTX=kind-book-v060-cred
 export PATH="$PWD/.bin:$PATH"
 
 # Call the companion backend from inside the cluster (the Chapter 3 bridge).
@@ -307,7 +307,7 @@ Expect the DNS error from section 3. Both Actors ran on the same Worker Pod; onl
 
 ## 9. Optional: rotate the token
 
-Rotate the account token in both Secrets without touching either Actor. The service re-reads its mounted file, which the kubelet refreshes within about a minute. The gateway caches a resolved credential for up to five minutes per Actor and URI, so the first publishes after rotation may return `401` until that cache expires. That delay is a real property of the alpha3 gateway, not a bug in the lab.
+Rotate the account token in both Secrets without touching either Actor. The service re-reads its mounted file, which the kubelet refreshes within about a minute. The gateway caches a resolved credential for up to five minutes per Actor and URI, so the first publishes after rotation may return `401` until that cache expires. That delay is a property of the released gateway, not a bug in the lab.
 
 ```shell
 new_token="$(openssl rand -hex 24)"
@@ -325,7 +325,7 @@ Then, after resuming `repo-workbench-1`, run `publish repo-workbench-1` every 15
 The UI exposes the same action. Keep this running in a second terminal:
 
 ```shell
-KIND_CLUSTER_NAME=book-alpha3-cred ./scripts/open-workbench.sh
+KIND_CLUSTER_NAME=book-v060-cred ./scripts/open-workbench.sh
 ```
 
 Open [http://localhost:8080](http://localhost:8080), select `repo-workbench-1`, and use **Publish report** with and without **Assert Actor** checked. The notice line reports the HTTP status the service returned, and the transcript shows each attempt's placeholder headers.
@@ -333,8 +333,8 @@ Open [http://localhost:8080](http://localhost:8080), select `repo-workbench-1`, 
 Delete the Actors when you are done. Deleting an Actor also deletes its egress policy.
 
 ```shell
-kubectl ate --context "$CTX" delete actor repo-workbench-2 -a book-workbench --any-state
-kubectl ate --context "$CTX" delete actor repo-workbench-1 -a book-workbench --any-state
+kubectl ate --context "$CTX" delete actor repo-workbench-2 -a book-workbench
+kubectl ate --context "$CTX" delete actor repo-workbench-1 -a book-workbench
 kubectl ate --context "$CTX" get actors -a book-workbench
 ```
 

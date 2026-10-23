@@ -134,7 +134,7 @@ class CliActorManager:
     def delete_actor(self, name: str) -> None:
         if not self.validates_name(name):
             raise ValueError("invalid Actor name")
-        self._run("delete", "actor", name, "--atespace", self.atespace, "--any-state", output=False)
+        self._run("delete", "actor", name, "--atespace", self.atespace, output=False)
 
 
 class LocalActorManager:

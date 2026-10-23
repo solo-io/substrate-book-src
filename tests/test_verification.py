@@ -15,7 +15,7 @@ with patch.dict(os.environ, {"KUBECTL_CONTEXT": "kind-unused-test"}):
 
 class VerificationTest(unittest.TestCase):
     def test_rustfs_internal_files_are_normalized_to_snapshot_objects(self):
-        root = "/data/ate-snapshots/book-workbench/actor/snapshot"
+        root = "/data/ate-snapshots/atespaces/book-workbench/actor/snapshot"
         files = "\n".join([
             root + "/manifest.json/xl.meta",
             root + "/checkpoint.img.zstd/xl.meta",

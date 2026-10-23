@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Rendered from the Substrate v0.6.0-alpha3 PostgreSQL base and kind overlay:
+# Rendered from the Substrate v0.6.0 PostgreSQL base and kind overlay:
 # manifests/ate-install/postgres/postgres.yaml
 # manifests/ate-install/kind/postgres/kustomization.yaml
 # Release commit: f499a14475013cf2f8dee8ee4b0f22b47d27047f

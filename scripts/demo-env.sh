@@ -2,14 +2,14 @@
 # do not execute it. It changes nothing in the cluster and never switches your
 # current kube context: every command names the lab with --context.
 #
-#   KIND_CLUSTER_NAME=book-alpha3-cred source ./scripts/demo-env.sh
+#   KIND_CLUSTER_NAME=book-v060-cred source ./scripts/demo-env.sh
 
 if [[ -n "${BASH_SOURCE:-}" && "${BASH_SOURCE[0]}" == "$0" ]]; then
   echo "source this file instead of running it: source ${BASH_SOURCE[0]}" >&2
   exit 2
 fi
 
-export CTX="kind-${KIND_CLUSTER_NAME:-book-alpha3-cred}"
+export CTX="kind-${KIND_CLUSTER_NAME:-book-v060-cred}"
 __demo_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 case ":${PATH}:" in
   *":${__demo_root}/.bin:"*) ;;

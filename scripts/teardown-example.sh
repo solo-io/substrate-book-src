@@ -11,7 +11,7 @@ actors_json="$(ate get actors -a "${BOOK_ATESPACE}" -o json 2>/dev/null || true)
 [[ -z "${actors_json}" ]] && actors_json='{}'
 while IFS= read -r actor_name; do
   [[ -z "${actor_name}" ]] && continue
-  ate delete actor "${actor_name}" -a "${BOOK_ATESPACE}" --any-state
+  ate delete actor "${actor_name}" -a "${BOOK_ATESPACE}"
 done < <(jq -r '.actors[]?.metadata.name' <<<"${actors_json}")
 if ate get actor-template "${BOOK_TEMPLATE}" -a "${BOOK_ATESPACE}" >/dev/null 2>&1; then
   ate delete actor-template "${BOOK_TEMPLATE}" -a "${BOOK_ATESPACE}"

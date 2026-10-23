@@ -50,7 +50,7 @@ echo "Deleting Actors from earlier runs (their egress policies go with them)..."
 actors_json="$(ate get actors -a "${BOOK_ATESPACE}" -o json 2>/dev/null || echo '{}')"
 while IFS= read -r actor_name; do
   [[ -z "${actor_name}" ]] && continue
-  ate delete actor "${actor_name}" -a "${BOOK_ATESPACE}" --any-state
+  ate delete actor "${actor_name}" -a "${BOOK_ATESPACE}"
 done < <(jq -r '.actors[]?.metadata.name' <<<"${actors_json}")
 deadline=$((SECONDS + 120))
 while ((SECONDS < deadline)); do

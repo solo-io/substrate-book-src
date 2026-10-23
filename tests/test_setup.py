@@ -66,7 +66,7 @@ exit 1
 
     def test_release_commit_identifies_a_cli_with_a_pseudo_version(self):
         cli = self.bin / "kubectl-ate"
-        release_commit = "e2fc0fa9f77ab5fc09eb01b43ccd74bd84c67c71"
+        release_commit = "91ddf40e437a693434cf9b883531bbe96d67c61c"
         cli.write_text(f'#!/bin/sh\necho "kubectl-ate version v0.0.0-test commit={release_commit}-dirty"\n')
         cli.chmod(0o755)
         result = subprocess.run(["bash", "-c", 'source "$1"; ensure_cli', "bash",
@@ -160,7 +160,7 @@ exit 1
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("demo image must be pinned by digest", result.stderr)
 
-    def test_platform_bootstrap_order_matches_alpha3_dependencies(self):
+    def test_platform_bootstrap_order_matches_release_dependencies(self):
         setup = (ROOT / "scripts/setup-kind.sh").read_text()
         platform = (ROOT / "manifests/platform.yaml.tmpl").read_text()
         markers = [
@@ -177,6 +177,8 @@ exit 1
         self.assertNotIn("meta.helm.sh/release-name=substrate", setup)
         self.assertIn('--post-renderer "${BOOK_EXAMPLES_ROOT}/scripts/pin-images.sh"', setup)
         self.assertIn('ate.dev/api-access: "true"', platform)
+        self.assertNotIn("actorIdentityJWTProvider", setup)
+        self.assertIn("jwtProviders:", setup)
         template = (ROOT / "manifests/actor-template.yaml.tmpl").read_text()
         self.assertNotIn("sandboxConfig:", template)
         self.assertIn("workerSelector:", template)
@@ -219,7 +221,7 @@ esac
 
     def test_live_demo_policies_exist_and_default_to_the_demo_lab(self):
         script = (ROOT / "scripts/live-demo.sh").read_text()
-        self.assertIn('KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-book-alpha3-cred}"', script)
+        self.assertIn('KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-book-v060-cred}"', script)
         policies = set(re.findall(r"demo/policies/[\w-]+\.yaml", script))
         self.assertEqual(len(policies), 3)
         for policy in policies:

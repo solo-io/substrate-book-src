@@ -22,7 +22,7 @@ else
   "${BOOK_EXAMPLES_ROOT}/scripts/download-cli.sh"
   echo "Building only the companion demo images (Substrate uses published images)..."
   for target in agent webapp source-control; do
-    tag="localhost:5001/book-src/repo-workbench-${target}:v060-alpha3"
+    tag="localhost:5001/book-src/repo-workbench-${target}:v060"
     docker build --target "${target}" -t "${tag}" "${BOOK_EXAMPLES_ROOT}"
     docker push "${tag}"
     digest="$(docker inspect --format '{{index .RepoDigests 0}}' "${tag}")"

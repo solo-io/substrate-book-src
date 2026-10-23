@@ -33,13 +33,10 @@ containers:
     mountPath: /run/ate
 resources:
   limits:
-  - name: cpu
-    quantity: "1"
-  - name: memory
-    quantity: 512Mi
+    cpuMillicores: 1000
+    memoryBytes: 536870912
 snapshotConfig:
   preferredFidelity: SNAPSHOT_FIDELITY_MEMORY
-  storageLocation: gs://ate-snapshots/book-workbench/
 volumes:
 - name: workspace
   durableDir: {}

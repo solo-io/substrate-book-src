@@ -3,10 +3,10 @@
 # what each request carried when it arrived, and what the service decided.
 # live-demo.sh opens this in a tmux pane; it also runs on its own.
 #
-#   KIND_CLUSTER_NAME=book-alpha3-cred ./scripts/demo-logs.sh
+#   KIND_CLUSTER_NAME=book-v060-cred ./scripts/demo-logs.sh
 
 set -o errexit -o nounset -o pipefail
-export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-book-alpha3-cred}"
+export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-book-v060-cred}"
 source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 require_command kubectl
 

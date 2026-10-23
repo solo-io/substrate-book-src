@@ -1,6 +1,6 @@
 {
-  "kubectl-ate-darwin-amd64": "431dbd3f716dc71ee887a6899b9896da0bd1f0c2341e57b35b7138290cc3d0a6",
-  "kubectl-ate-darwin-arm64": "119cc7f55c4ca9d853651052e0d03ecf066c9a9c18c4d1a17da15b2095e49f40",
-  "kubectl-ate-linux-amd64": "bbebe540531aa0cd6b436b2f6a0665eca82feba2cb4942bb3e3f997c3c9c4ad1",
-  "kubectl-ate-linux-arm64": "8e8e21d7198b18eea85aea490b275f3472393f2f0982f55035306558d63a57ce"
+  "kubectl-ate-darwin-amd64": "a41bf2b1ecd7611bbadbeb18b1dd86ce994cce8ea0fd4be3845f6500c62d561c",
+  "kubectl-ate-darwin-arm64": "ff427667527480bd1a216c65e2bc256d32e17e7ea4978543f7371ba81a70d21a",
+  "kubectl-ate-linux-amd64": "0761e77a133780d43612ccab249b2f93555bd567eeec985c6cd519a9607c1454",
+  "kubectl-ate-linux-arm64": "96b74490f75cb1a796f6eb7c5235c1c49280a687cd31d7f424c84f395e9cd033"
 }

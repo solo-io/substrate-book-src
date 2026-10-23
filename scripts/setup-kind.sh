@@ -91,7 +91,6 @@ actor_ca="$(kube get secret actor-id-ca-pool -n ate-system -o json | jq -r '.dat
 kube create secret generic actor-id-ca-certs -n ate-system --from-literal=ca.crt="${actor_ca}" --dry-run=client -o yaml | kube apply -f -
 issuer="$(kube get --raw /.well-known/openid-configuration | jq -r '.issuer')"
 kube create configmap ate-api-authentication -n ate-system   --from-literal=authentication.yaml="$(cat <<EOF
-actorIdentityJWTProvider: kubernetes
 jwtProviders:
 - name: kubernetes
   issuer: ${issuer}

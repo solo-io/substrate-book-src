@@ -22,11 +22,11 @@
 # --check-snippets verifies that the code excerpts still match the source.
 #
 # Keys while presenting: any key runs the next command or advances; q quits.
-# Targets KIND_CLUSTER_NAME (default book-alpha3-cred) by --context only; it
+# Targets KIND_CLUSTER_NAME (default book-v060-cred) by --context only; it
 # never switches your current kube context.
 
 set -o errexit -o nounset -o pipefail
-export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-book-alpha3-cred}"
+export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-book-v060-cred}"
 source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 cd "${BOOK_EXAMPLES_ROOT}"
 

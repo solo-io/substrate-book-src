@@ -94,7 +94,8 @@ def snapshot_object_names(path, output):
 
 def snapshot_files(value):
     uri = snapshot_uri(value)
-    lab.check(uri.startswith("gs://ate-snapshots/book-workbench/"), "unexpected snapshot location")
+    lab.check(uri.startswith("gs://ate-snapshots/atespaces/book-workbench/"),
+              "unexpected snapshot location")
     path = uri.replace("gs://", "/data/", 1)
     result = lab.run_command("kubectl", "--context", lab.CONTEXT, "exec", "-n", "ate-system",
                              "deploy/rustfs", "--", "find", path, "-type", "f")
@@ -125,10 +126,6 @@ def set_router_config(config):
             return
         time.sleep(2)
     raise RuntimeError(f"AgentGateway did not reload the projected config: loads={initial_loads}->{last_loads}")
-
-
-def limits_by_name(value):
-    return {item["name"]: item["quantity"] for item in value}
 
 
 def restart_atelet():
@@ -174,14 +171,13 @@ def verify_chapter3(first, second):
     lab.check(len(workers) == 1 and workers[0]["status"]["state"] == "WORKER_STATE_ACTIVE",
               "Substrate does not report one active Worker")
     capacity = workers[0]["status"]["capacity"]
-    lab.check(capacity["actors"] == 1000 and
-              limits_by_name(capacity["resources"]["limits"]) == {"cpu": "1", "memory": "1Gi"},
+    lab.check(capacity == {"cpuMillicores": "1000", "memoryBytes": "1073741824", "actors": 1000},
               "Worker capacity differs from the Chapter 3 lab")
 
     template = lab.ate("get", "actor-template", "repo-workbench", "-a", lab.NAMESPACE)
     lab.check("sandboxConfig" not in template and
               template["workerSelector"]["matchLabels"] == {"workload": "generic-worker"} and
-              limits_by_name(template["resources"]["limits"]) == {"cpu": "1", "memory": "512Mi"},
+              template["resources"]["limits"] == {"cpuMillicores": "1000", "memoryBytes": "536870912"},
               "ActorTemplate placement, sandbox ownership, or resource requirements changed")
     lab.check(template["snapshotConfig"]["preferredFidelity"] == MEMORY and
               bool(template.get("status", {}).get("goldenSnapshotStatus", {}).get("goldenTag", {}).get("name")),
@@ -416,9 +412,12 @@ def verify_snapshots(first, second, third, fourth, template, tag):
               "VOLUMES async suspend retained the old transcript")
     lifecycle("suspend", third)
     sync_status = lab.actor(third)["status"]
-    lab.check(not any(snapshot.get("locality") for snapshot in snapshots(sync_status)) and
+    sync_local = local_snapshot(sync_status)
+    lab.check(sync_status.get("assignedNode") == sync_local["locality"] and
+              not sync_status.get("workerAssignment") and
+              sync_local.get("durableSnapshot", {}).get("status") == COMPLETED and
               durable_snapshot(sync_status)["fidelity"] == VOLUMES,
-              "synchronous VOLUMES suspend did not complete durable storage")
+              "synchronous VOLUMES suspend did not retain a completed local snapshot")
     print("PASS: Chapter 5 async MEMORY state survives atelet restart; async/sync VOLUMES suspends preserve files and reset memory", flush=True)
 
     lab.ate("create", "tag", tag, "--actor", first, "-a", lab.NAMESPACE)
@@ -430,7 +429,7 @@ def verify_snapshots(first, second, third, fourth, template, tag):
     lab.suspend(fourth)
     fork_snapshot = snapshot_uri(lab.actor(fourth))
     ate_command("delete", "actor", fourth, "-a", lab.NAMESPACE)
-    object_root = "/data/ate-snapshots/book-workbench"
+    object_root = "/data/ate-snapshots"
     listing = lab.run_command("kubectl", "--context", lab.CONTEXT, "exec", "-n", "ate-system",
                               "deploy/rustfs", "--", "find", object_root, "-type", "f").stdout
     objects = snapshot_object_names(object_root, listing)
@@ -603,7 +602,7 @@ def main():
         # Delete only the names this suite reserves in an initially empty lab.
         failures = []
         for name in (fourth, third, second, first):
-            result = ate_command("delete", "actor", name, "-a", lab.NAMESPACE, "--any-state", success=None)
+            result = ate_command("delete", "actor", name, "-a", lab.NAMESPACE, success=None)
             if result.returncode and "NotFound" not in result.stderr:
                 failures.append(result.stderr)
         for resource, name in (("tag", tag), ("actor-template", template)):

@@ -1,4 +1,4 @@
-"""Verify the v0.6.0-alpha3 kind PostgreSQL bootstrap without contacting a cluster."""
+"""Verify the v0.6.0 kind PostgreSQL bootstrap without contacting a cluster."""
 
 import json
 import os
