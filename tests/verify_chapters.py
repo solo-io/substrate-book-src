@@ -13,6 +13,7 @@ MEMORY = "SNAPSHOT_FIDELITY_MEMORY"
 VOLUMES = "SNAPSHOT_FIDELITY_VOLUMES"
 PENDING = "SNAPSHOT_STORAGE_STATUS_PENDING"
 COMPLETED = "SNAPSHOT_STORAGE_STATUS_COMPLETED"
+ROUTER_ASSIGNMENT_CACHE_SECONDS = 6
 
 
 def wait_for(description, read, predicate, timeout=180):
@@ -319,6 +320,10 @@ def verify_recovery(second):
     )
     lifecycle("revert", second)
     lifecycle("resume", second)
+    # AgentGateway caches an Actor's Worker address for 5s and evicts it early only
+    # when a live Worker rejects the request. A deleted Worker can't, so a request
+    # sent faster than a reader would type still dials the old Pod and returns 503.
+    time.sleep(ROUTER_ASSIGNMENT_CACHE_SECONDS)
     recovered = state(second)
     lab.check(recovered["currentStep"] == 1, "recovery retained unsaved step 2 or lost saved step 1")
     lab.check(lab.actor(second)["metadata"]["uid"] == uid, "recovery changed Actor UID")
@@ -459,21 +464,21 @@ def publish_until(name, description, predicate, assert_actor=False, timeout=90):
 
 
 def set_policy(name, rules):
-    # The CLI exits 0 with a prose message when an Actor has no policy yet.
+    # Chapter 6 replaces a policy by deleting it and creating it again.
     existing = lab.run_command(str(lab.ROOT / ".bin/kubectl-ate"), "--context", lab.CONTEXT, "get",
                                "egress-policy", name, "-a", lab.NAMESPACE, "-o", "json", success=None)
-    if existing.returncode or not existing.stdout.lstrip().startswith("{"):
-        ate_command("create", "egress-policy", name, "-a", lab.NAMESPACE, "-f", "-", manifest={"rules": rules})
-    else:
-        policy = json.loads(existing.stdout)
-        policy["rules"] = rules
-        ate_command("update", "egress-policy", name, "-a", lab.NAMESPACE, "-f", "-", manifest=policy)
+    if not existing.returncode and existing.stdout.lstrip().startswith("{"):
+        ate_command("delete", "egress-policy", name, "-a", lab.NAMESPACE)
+    ate_command("create", "egress-policy", name, "-a", lab.NAMESPACE, "-f", "-", manifest={"rules": rules})
     return lab.ate("get", "egress-policy", name, "-a", lab.NAMESPACE)
 
 
 SOURCE_CONTROL_HOST = "source-control.book-workbench.svc.cluster.local"
 GRANTED_URI = "ate-secret://k8s.io/default/workbench-secrets/git-token/token"
 UNGRANTED_URI = "ate-secret://k8s.io/default/book-workbench/source-control-token/token"
+NAMESPACE_POLICY = 'policies: [{"allowedNamespaces":["workbench-secrets"],"atespace":"book-workbench"}]'
+DNS_DENIED = "Name or service not known"
+NOT_PERMITTED = 'atespace "book-workbench" is not permitted to resolve secrets in namespace "book-workbench"'
 
 
 def account_token_fingerprint():
@@ -482,6 +487,10 @@ def account_token_fingerprint():
     encoded = lab.run_command("kubectl", "--context", lab.CONTEXT, "get", "secret", "git-token",
                               "-n", "workbench-secrets", "-o", "jsonpath={.data.token}").stdout
     return hashlib.sha256(base64.b64decode(encoded)).hexdigest()[:16]
+
+
+def dns_denied(outcome):
+    return outcome["status"] is None and DNS_DENIED in (outcome["error"] or "")
 
 
 def verify_identity_and_policy(first, second):
@@ -501,45 +510,62 @@ def verify_identity_and_policy(first, second):
     suspended = lab.actor(first)
     lab.check(suspended["metadata"]["uid"] == uid and not suspended["status"].get("workerAssignment"),
               "suspend changed identity or retained placement")
-    print("PASS: Chapter 6 Actor UID survives placement changes", flush=True)
+    print("PASS: Chapter 6.2 Actor UID survives placement changes", flush=True)
 
-    # Credential brokering: the Actor only ever sends placeholder headers.
+    # Section 6.3: the Actor only ever sends placeholder headers. A fresh lab
+    # starts with no pull requests; count from the existing ones on a reused lab.
+    existing_pulls = len(lab.request("/api/source-control/pulls")["pulls"])
     lifecycle("resume", first)
     lab.check(state(first)["canPublish"], "Actor at step 6 cannot publish its report")
     denied = publish(first)["publish"]
-    lab.check(denied["status"] is None and denied["error"], f"publish without a policy was not denied: {denied}")
+    lab.check(dns_denied(denied), f"publish without a policy was not denied at DNS: {denied}")
     lab.check(denied["sentHeaders"] == {"Authorization": "placeholder"}, "Actor sent a real credential")
+    print("PASS: Chapter 6.3 publish without a policy fails name resolution", flush=True)
 
     actual = set_policy(first, [{"http": {"hostnames": [SOURCE_CONTROL_HOST]}}])
     lab.check(actual["rules"][0]["http"]["ports"]["numbers"] == [80], "HTTP rule default port changed")
     allowed = publish_until(first, "hostname rule to allow the request",
                             lambda outcome: outcome["status"] is not None)
-    lab.check(allowed["status"] == 401, f"allowed request without a credential was not rejected: {allowed}")
-    lab.check("bearer" in json.dumps(allowed["response"]).lower(), "service did not explain the rejection")
+    lab.check(allowed["status"] == 401 and allowed["response"] == {
+        "error": "Authorization header is not a bearer token", "tokenFingerprint": None},
+        f"allowed request without a credential was not rejected as in the chapter: {allowed}")
+    print("PASS: Chapter 6.3 hostname rule reaches the service, which rejects the placeholder with 401", flush=True)
+
+    # Section 6.4: the provider grant rendered at install time.
+    grant = lab.run_command("kubectl", "--context", lab.CONTEXT, "get", "configmap",
+                            "k8s-credential-provider-namespace-policy", "-n", "ate-system",
+                            "-o", r"jsonpath={.data.namespace-policy\.yaml}").stdout.strip()
+    lab.check(grant == NAMESPACE_POLICY, f"provider grant differs from the chapter: {grant}")
 
     effect = {"replaceHeaders": [{"header": "Authorization", "prefix": "Bearer ", "credentialUri": GRANTED_URI}]}
     actual = set_policy(first, [{"http": {"hostnames": [SOURCE_CONTROL_HOST], "effects": effect}}])
     lab.check(actual["rules"][0]["http"]["effects"] == effect, "credential replacement effect changed")
     injected = publish_until(first, "credential injection", lambda outcome: outcome["status"] == 201)
     lab.check(injected["sentHeaders"] == {"Authorization": "placeholder"}, "Actor saw the injected credential")
-    lab.check(injected["response"]["authenticatedAs"] == "repo-workbench-bot" and injected["response"]["actor"] is None,
-              f"service did not authenticate the injected token: {injected}")
+    lab.check(injected["response"] == {"number": existing_pulls + 1, "repo": "repo-workbench",
+                                       "authenticatedAs": "repo-workbench-bot", "actor": None},
+              f"service response differs from the chapter: {injected}")
     pulls = lab.request("/api/source-control/pulls")["pulls"]
-    lab.check(pulls and pulls[-1]["tokenFingerprint"] == account_token_fingerprint() and
+    lab.check(len(pulls) == existing_pulls + 1 and pulls[-1]["authenticatedAs"] == "repo-workbench-bot" and
+              pulls[-1]["tokenFingerprint"] == account_token_fingerprint() and
               pulls[-1]["actor"] is None and "# Agent report" in pulls[-1]["body"],
               f"service record does not match the Secret: {pulls[-1:]}")
     lab.check("placeholder" not in json.dumps(injected["response"]), "placeholder reached the service")
-    print("PASS: Chapter 6 gateway injects the granted Secret; the Actor and the service never see each other's secret",
+    print("PASS: Chapter 6.4 gateway injects the granted Secret as the next pull request; fingerprints match",
           flush=True)
 
     ungranted = {"replaceHeaders": [{"header": "Authorization", "prefix": "Bearer ", "credentialUri": UNGRANTED_URI}]}
     set_policy(first, [{"http": {"hostnames": [SOURCE_CONTROL_HOST], "effects": ungranted}}])
     refused = publish_until(first, "provider refusal", lambda outcome: outcome["status"] == 403)
+    # The gateway returns the provider message as text with escaped quotes.
+    lab.check(NOT_PERMITTED in json.dumps(refused["response"]).replace("\\", ""),
+              f"403 does not carry the chapter's provider message: {refused}")
     lab.check(len(lab.request("/api/source-control/pulls")["pulls"]) == len(pulls),
               "a refused credential request still reached the service")
-    print("PASS: Chapter 6 provider refuses a Secret outside the Atespace grant and the gateway fails closed",
+    print("PASS: Chapter 6.4 provider refuses a Secret outside the Atespace grant and the gateway fails closed",
           flush=True)
 
+    # Section 6.5: an Actor JWT alongside the account token.
     asserted = {"replaceHeaders": [
         {"header": "Authorization", "prefix": "Bearer ", "credentialUri": GRANTED_URI},
         {"header": "Actor-Assertion", "actorJwt": {"audiences": [SOURCE_CONTROL_HOST], "expirationSeconds": 600}},
@@ -552,24 +578,43 @@ def verify_identity_and_policy(first, second):
                                assert_actor=True)
     lab.check(with_actor["sentHeaders"] == {"Authorization": "placeholder", "Actor-Assertion": "placeholder"},
               "Actor saw its own assertion")
-    actor_claim = with_actor["response"]["actor"]
-    lab.check(actor_claim and actor_claim["atespace"] == lab.NAMESPACE and actor_claim["name"] == first and
-              actor_claim["uid"] == uid and actor_claim["subject"] == f"actor/{lab.NAMESPACE}/{first}",
-              f"service did not verify the Actor JWT: {with_actor}")
+    lab.check(with_actor["response"] == {
+        "number": existing_pulls + 2, "repo": "repo-workbench", "authenticatedAs": "repo-workbench-bot",
+        "actor": {"subject": f"actor/{lab.NAMESPACE}/{first}", "atespace": lab.NAMESPACE,
+                  "name": first, "uid": uid}},
+        f"service did not verify the Actor JWT as the following pull request: {with_actor}")
     unverified = publish_until(first, "placeholder assertion without the effect",
                                lambda outcome: outcome["status"] == 201, assert_actor=False)
-    lab.check(unverified["response"]["actor"] is None, "assertion was injected without the header present")
-    print("PASS: Chapter 6 gateway mints and injects an Actor JWT the service verifies against the IdP",
+    lab.check(unverified["response"]["actor"] is None and
+              unverified["response"]["authenticatedAs"] == "repo-workbench-bot",
+              "assertion was injected without the header present")
+    print("PASS: Chapter 6.5 gateway mints and injects an Actor JWT the service verifies against the IdP",
           flush=True)
 
+    # "The policy follows the Actor": the second Actor has no policy.
     lifecycle("suspend", first)
+    lifecycle("resume", second)
+    completed = lab.request(f"/api/actors/{second}/fast-forward", "POST", {"expectedStep": 1})
+    lab.check(completed["actor"]["name"] == second and completed["currentStep"] == 7 and
+              completed["phase"] == "done", f"second Actor did not finish from step 1: {completed['currentStep']}")
+    second_denied = publish(second)["publish"]
+    lab.check(dns_denied(second_denied) and second_denied["sentHeaders"] == {"Authorization": "placeholder"},
+              f"second Actor reached the service without a policy: {second_denied}")
+    lab.check(lab.actor(second)["status"]["workerAssignment"]["workerPodUid"] ==
+              running["status"]["workerAssignment"]["workerPodUid"],
+              "second Actor did not share the first Actor's Worker Pod")
+    lifecycle("suspend", second)
     lifecycle("resume", first)
     after_move = publish_until(first, "injection after resume", lambda outcome: outcome["status"] == 201,
                                assert_actor=True)
     lab.check(after_move["response"]["actor"]["uid"] == uid and
               state(first)["publications"][0]["status"] is None and len(state(first)["publications"]) >= 6,
               "policy or publish history did not follow the Actor across activations")
-    print("PASS: Chapter 6 policy and credential follow the Actor across suspend and resume", flush=True)
+    lab.check(lab.actor(first)["status"]["state"] == "ACTOR_STATE_RUNNING" and
+              lab.actor(second)["status"]["state"] == "ACTOR_STATE_SUSPENDED",
+              "Chapter 6 did not end with actor 1 running and actor 2 suspended")
+    print("PASS: Chapter 6 policy follows actor 1 across suspend/resume; actor 2 on the same Worker is denied",
+          flush=True)
 
 
 def main():
