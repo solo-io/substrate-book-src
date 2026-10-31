@@ -3,8 +3,8 @@
 set -o errexit -o nounset -o pipefail
 
 BOOK_EXAMPLES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUBSTRATE_VERSION="v0.6.0"
-SUBSTRATE_COMMIT="91ddf40e437a693434cf9b883531bbe96d67c61c"
+SUBSTRATE_VERSION="v1.0.0-rc1"
+SUBSTRATE_COMMIT="71b1f9ec80848f8fd46f5d5d7e6b84ba36a80966"
 SUBSTRATE_CHART_VERSION="${SUBSTRATE_VERSION#v}"
 SUBSTRATE_CHART_REPO="oci://ghcr.io/kagent-dev/substrate/helm"
 SUBSTRATE_CHART_DIR="${BOOK_EXAMPLES_ROOT}/.cache/charts/${SUBSTRATE_CHART_VERSION}"
@@ -73,7 +73,7 @@ golden_tag_ready() {
   [[ -n "${tag}" ]] || return 1
   ate get tags -a "${BOOK_ATESPACE}" -o json 2>/dev/null | jq -e --arg tag "${tag}" '
     [.tags[]? | select(.metadata.name == $tag)
-     | .status.snapshot.durableSnapshot.status == "SNAPSHOT_STORAGE_STATUS_COMPLETED"] | any' >/dev/null || return 1
+     | .status.snapshot.durableSnapshot.state == "SNAPSHOT_STORAGE_STATE_COMPLETED"] | any' >/dev/null || return 1
   echo "${tag}"
 }
 

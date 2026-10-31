@@ -197,7 +197,14 @@ EOF
 publish repo-workbench-1
 ```
 
-Expect `status: 403` and a response string containing `atespace "book-workbench" is not permitted to resolve secrets in namespace "book-workbench"`. The gateway failed closed; confirm the service did not receive a new pull:
+Expect `status: 403` and the response `actor egress policy denied`. The Actor learns only that it was refused; the gateway records why:
+
+```shell
+kubectl --context "$CTX" logs -n ate-system deployment/atenet-egress --since=1m |
+  grep 'http.status=403' | grep -o 'error=.* reason=[A-Za-z]*'
+```
+
+Expect `error="credential provider k8s.io denied: ...` with the provider's message, `atespace "book-workbench" is not permitted to resolve secrets in namespace "book-workbench"` (its quotes escaped), followed by `reason=Authorization`. The gateway failed closed; confirm the service did not receive a new pull:
 
 ```shell
 wb /api/source-control/pulls | jq '.pulls | length'
@@ -343,8 +350,9 @@ kubectl ate --context "$CTX" get actors -a book-workbench
 ## Troubleshooting
 
 - **Still a DNS error right after creating a policy.** The relay and gateway pick up policies asynchronously. Wait a few seconds and publish again.
-- `403` **with "no credential provider configured".** The egress gateway config lost its `credentialProviders` entry; the published chart wires it by default. Check `kubectl --context "$CTX" -n ate-system get configmap atenet-egress-agentgateway-config -o yaml`.
-- `403` **naming your Atespace on a granted namespace.** The provider loads grants at startup. Check the ConfigMap from section 1 and the provider's Pod age; a Helm values change rolls it automatically.
+- **An unexpected `403`.** The Actor always sees `actor egress policy denied`; read the `error=` field on the matching `atenet-egress` log line for the reason.
+- `403` **logged as "no credential provider configured".** The egress gateway config lost its `credentialProviders` entry; the published chart wires it by default. Check `kubectl --context "$CTX" -n ate-system get configmap atenet-egress-agentgateway-config -o yaml`.
+- `403` **logged as naming your Atespace on a granted namespace.** The provider loads grants at startup. Check the ConfigMap from section 1 and the provider's Pod age; a Helm values change rolls it automatically.
 - `503` **from the gateway.** The provider or the control plane was unreachable. It is fail-closed and retryable; check `kubectl --context "$CTX" -n ate-system get pods`.
 - **Actor JWT rejected with "signing key unavailable".** The service could not reach `https://idp.ate-system.svc` or did not trust its certificate. Check the `ate-idp-server` Pods and the projected `servicedns.podcert.ate.dev` trust bundle in the `source-control` Pod.
 

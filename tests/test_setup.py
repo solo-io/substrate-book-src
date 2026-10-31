@@ -66,7 +66,8 @@ exit 1
 
     def test_release_commit_identifies_a_cli_with_a_pseudo_version(self):
         cli = self.bin / "kubectl-ate"
-        release_commit = "91ddf40e437a693434cf9b883531bbe96d67c61c"
+        release_commit = re.search(r'^SUBSTRATE_COMMIT="([0-9a-f]{40})"$',
+                                   (self.root / "scripts/lib.sh").read_text(), re.MULTILINE)[1]
         cli.write_text(f'#!/bin/sh\necho "kubectl-ate version v0.0.0-test commit={release_commit}-dirty"\n')
         cli.chmod(0o755)
         result = subprocess.run(["bash", "-c", 'source "$1"; ensure_cli', "bash",

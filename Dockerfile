@@ -50,7 +50,7 @@ COPY webapp/server.py webapp/index.html webapp/kubeconfig.yaml /app/
 COPY .bin/kubectl-ate-linux-${TARGETARCH} /usr/local/bin/kubectl-ate
 
 ENV PORT=80 \
-    AGENT_URL=http://atenet-router.ate-system.svc.cluster.local \
+    AGENT_URL=https://atenet-router.ate-system.svc \
     ATE_CLI=/usr/local/bin/kubectl-ate \
     ATE_ENDPOINT=api.ate-system.svc:443 \
     ATE_KUBECONFIG=/app/kubeconfig.yaml \

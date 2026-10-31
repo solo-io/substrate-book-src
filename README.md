@@ -56,13 +56,13 @@ docs/images/                   Guide diagrams and screenshots
 
 ## Set up the published Substrate runtime
 
-This example uses the [kagent-dev distribution of Agent Substrate v0.6.0](https://github.com/kagent-dev/substrate/releases/tag/v0.6.0). The API is still pre-1.0, so the setup pins and verifies the exact release artifacts rather than following mutable tags.
+This example uses the [kagent-dev distribution of Agent Substrate v1.0.0-rc1](https://github.com/kagent-dev/substrate/releases/tag/v1.0.0-rc1). It is a release candidate, so the setup pins and verifies the exact release artifacts rather than following mutable tags.
 
 Setup downloads its released `kubectl-ate` binaries and the published `substrate-crds`, `substrate-podcert`, and `substrate` Helm chart packages, verifies their SHA-256 checksums, and installs the verified packages. The lab also applies a checked-in, kind-sized PostgreSQL manifest and prepares the separate owner/read-write database identities the API server expects. All platform container images, including `ate-idp-server`, PostgreSQL, the object-store plugin, and the matching `ateworker-gvisor` Worker, are pinned by digest. No Substrate source checkout, Go compiler, or runtime image build is required.
 
 Run the commands below from this companion repository. The version is declared in `scripts/lib.sh`; the binary checksums are in `scripts/cli-checksums.json`, and the chart checksums and image digests are in `scripts/runtime-lock.json`. Setup creates the three certificate-authority pools, installs the certificate controller as its own Helm release, prepares PostgreSQL, configures API authentication, and waits for the platform before deploying the example.
 
-The v0.6.0 bootstrap is for a fresh, disposable book cluster. It does not migrate Actors, snapshots, or the PostgreSQL volume from an earlier build. Use a new `KIND_CLUSTER_NAME`, or use `./scripts/setup-kind.sh --recreate` only when you intend to delete the named cluster and all Actor state in it.
+The v1.0.0-rc1 bootstrap is for a fresh, disposable book cluster. It does not migrate Actors, snapshots, or the PostgreSQL volume from an earlier build. Use a new `KIND_CLUSTER_NAME`, or use `./scripts/setup-kind.sh --recreate` only when you intend to delete the named cluster and all Actor state in it.
 
 The three **companion demo images** are still built locally with Docker: the repository worker, its web application, and the stand-in source-control service. Publishing these for AMD64 and ARM64 is a follow-up task; Substrate, its Worker, and both CLI binaries already come from the public kagent-dev release. The local demo images are pushed to `localhost:5001`, and their deployment references use digests. No cloud account or private registry credentials are required.
 
@@ -100,11 +100,11 @@ Keep Docker running and wait for **Setup complete**. The first run downloads the
 
 The setup script:
 
-1. Downloads and checks the host and Linux `kubectl-ate` binaries for `v0.6.0`.
+1. Downloads and checks the host and Linux `kubectl-ate` binaries for `v1.0.0-rc1`.
 2. Creates or reuses the `kind-book-workbench` context with the required certificate APIs.
 3. Installs the CRDs, creates the three CA pools, and installs the separate `substrate-podcert` release.
 4. Applies the digest-pinned development PostgreSQL manifest and creates its roles and connection Secrets.
-5. Configures application authentication and installs the main Substrate chart.
+5. Configures application authentication and installs the main Substrate chart, allowing the web application's Pod identity through the router.
 6. Builds only the agent, web application, and source-control service, then deploys them with one published gVisor Worker.
 7. Creates the `book-workbench` Atespace and `repo-workbench` ActorTemplate, then waits for its golden snapshot.
 
@@ -166,12 +166,12 @@ The web application's task path is separate:
 ```text
 Browser
   -> Repo Workbench web backend
-  -> AgentGateway with ate-target-actor: book-workbench/<actor-name>
+  -> AgentGateway over mTLS with ate-target-actor: book-workbench/<actor-name>
   -> selected repository Actor
   -> inspect state or advance the workflow
 ```
 
-The web application's Kubernetes permissions are intentionally narrow: it can read the serving trust bundle and request an `ate-client` token. The browser never receives those credentials.
+The web application's Kubernetes permissions are intentionally narrow: it can read the serving trust bundle and request an `ate-client` token. To reach an Actor, it presents its own Pod certificate to the router, which admits only the client identities listed in `atenetRouter.ingressAllowedSPIFFEIDs` (see `manifests/substrate-values.yaml`). The browser never receives those credentials.
 
 ### 4. Create the first repository run
 
@@ -439,9 +439,9 @@ Run a fresh setup, the application/setup tests, and the stateful Chapter 3–6 l
 
 The runner selects a unique kind cluster name and refuses to use an existing cluster. It deletes its test resources and cluster on success or failure, restores the previous Kubernetes context, and saves logs under `.test-results/<cluster-name>/`. Set `KIND_CLUSTER_NAME` to choose a new name. `--keep-cluster` retains the disposable lab for a browser check; use `teardown-example.sh` and `delete-kind.sh` with the same name afterward.
 
-The maintained chapter suite starts with Chapter 3's prepared Worker and template, runs two Actors through the CLI and backend walkthrough, and preserves the manuscript's step 6/step 1 handoff into Chapter 4. It then checks the v0.6.0 HTTP 503 capacity response, request parking, Worker-loss recovery, MEMORY and VOLUMES snapshots, asynchronous and synchronous suspend modes, tags, the Chapter 5 reset, stable identity, and the Chapter 6 credential brokering flow: denial without a policy, a `401` with a hostname rule alone, a `201` with the granted Secret injected, a `403` when the URI names an ungranted namespace, a verified Actor JWT, and the same behavior after suspend and resume. Its parked-success case temporarily sets a 30-second request budget to accommodate slower test hosts, then restores the original router configuration. Browser interaction and HTTPS interception are not part of this suite.
+The maintained chapter suite starts with Chapter 3's prepared Worker and template, runs two Actors through the CLI and backend walkthrough, and preserves the manuscript's step 6/step 1 handoff into Chapter 4. It then checks the HTTP 503 capacity response, request parking, Worker-loss recovery, MEMORY and VOLUMES snapshots, asynchronous and synchronous suspend modes, tags, the Chapter 5 reset, stable identity, and the Chapter 6 credential brokering flow: denial without a policy, a `401` with a hostname rule alone, a `201` with the granted Secret injected, a `403` when the URI names an ungranted namespace, a verified Actor JWT, and the same behavior after suspend and resume. Its parked-success case temporarily sets a 30-second request budget to accommodate slower test hosts, then restores the original router configuration. Browser interaction and HTTPS interception are not part of this suite.
 
-The Linux GitHub Actions workflow runs the same fresh-lab command on `ubuntu-24.04` and retains test logs for seven days. On Linux or WSL2, `./scripts/install-ci-tools.sh` installs checksum-verified kind, kubectl, and Helm into `.ci-tools/bin` when those tools are needed. See [the testing guide](docs/testing.md) for commands and coverage, and the [dated v0.6.0 validation record](docs/validation-kagent-v0.6.0.md) for the exact artifacts, lifecycle checks, and remaining gaps from this upgrade.
+The Linux GitHub Actions workflow runs the same fresh-lab command on `ubuntu-24.04` and retains test logs for seven days. On Linux or WSL2, `./scripts/install-ci-tools.sh` installs checksum-verified kind, kubectl, and Helm into `.ci-tools/bin` when those tools are needed. See [the testing guide](docs/testing.md) for commands and coverage, and the [dated v1.0.0-rc1 validation record](docs/validation-kagent-v1.0.0-rc1.md) for the exact artifacts, lifecycle checks, and remaining gaps from this upgrade.
 
 ## Clean up
 

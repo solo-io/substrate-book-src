@@ -11,8 +11,8 @@ import verify_deployed as lab
 
 MEMORY = "SNAPSHOT_FIDELITY_MEMORY"
 VOLUMES = "SNAPSHOT_FIDELITY_VOLUMES"
-PENDING = "SNAPSHOT_STORAGE_STATUS_PENDING"
-COMPLETED = "SNAPSHOT_STORAGE_STATUS_COMPLETED"
+PENDING = "SNAPSHOT_STORAGE_STATE_PENDING"
+COMPLETED = "SNAPSHOT_STORAGE_STATE_COMPLETED"
 ROUTER_ASSIGNMENT_CACHE_SECONDS = 6
 
 
@@ -67,7 +67,7 @@ def snapshots(value):
 
 def durable_snapshot(value):
     completed = [snapshot for snapshot in snapshots(value)
-                 if snapshot.get("durableSnapshot", {}).get("status") == COMPLETED]
+                 if snapshot.get("durableSnapshot", {}).get("state") == COMPLETED]
     lab.check(completed, "Actor has no completed durable snapshot")
     return max(completed, key=lambda snapshot: snapshot["generation"])
 
@@ -172,7 +172,8 @@ def verify_chapter3(first, second):
     lab.check(len(workers) == 1 and workers[0]["status"]["state"] == "WORKER_STATE_ACTIVE",
               "Substrate does not report one active Worker")
     capacity = workers[0]["status"]["capacity"]
-    lab.check(capacity == {"cpuMillicores": "1000", "memoryBytes": "1073741824", "actors": 1000},
+    # The Worker keeps 64 MiB of its 1 GiB Pod limit for itself and checkpoint writes.
+    lab.check(capacity == {"cpuMillicores": "1000", "memoryBytes": "1006632960", "actors": 1000},
               "Worker capacity differs from the Chapter 3 lab")
 
     template = lab.ate("get", "actor-template", "repo-workbench", "-a", lab.NAMESPACE)
@@ -351,7 +352,7 @@ def verify_snapshots(first, second, third, fourth, template, tag):
     local = local_snapshot(memory_suspended)
     lab.check(memory_suspended["state"] == "ACTOR_STATE_SUSPENDED" and
               local["fidelity"] == MEMORY and
-              local.get("durableSnapshot", {}).get("status") == PENDING and
+              local.get("durableSnapshot", {}).get("state") == PENDING and
               bool(local.get("durableSnapshot", {}).get("object", {}).get("snapshotUri")) and
               memory_suspended.get("assignedNode") == local["locality"] and
               not memory_suspended.get("workerAssignment"),
@@ -360,7 +361,7 @@ def verify_snapshots(first, second, third, fourth, template, tag):
     recovered_local = local_snapshot(lab.actor(first))
     lab.check(recovered_local["generation"] == local["generation"] and
               recovered_local["locality"] == local["locality"] and
-              recovered_local.get("durableSnapshot", {}).get("status") == PENDING,
+              recovered_local.get("durableSnapshot", {}).get("state") == PENDING,
               "atelet restart lost or replaced the reported local snapshot")
     lifecycle("resume", first)
     after_memory_async = state(first)
@@ -405,7 +406,7 @@ def verify_snapshots(first, second, third, fourth, template, tag):
     lab.check(async_status["state"] == "ACTOR_STATE_SUSPENDED" and
               async_status.get("assignedNode") == async_local["locality"] and
               not async_status.get("workerAssignment") and
-              async_local.get("durableSnapshot", {}).get("status") == PENDING,
+              async_local.get("durableSnapshot", {}).get("state") == PENDING,
               "asynchronous suspend did not release the Worker with a pending local snapshot")
     lab.check(async_local["fidelity"] == VOLUMES,
               "asynchronous VOLUMES suspend captured process memory")
@@ -420,7 +421,7 @@ def verify_snapshots(first, second, third, fourth, template, tag):
     sync_local = local_snapshot(sync_status)
     lab.check(sync_status.get("assignedNode") == sync_local["locality"] and
               not sync_status.get("workerAssignment") and
-              sync_local.get("durableSnapshot", {}).get("status") == COMPLETED and
+              sync_local.get("durableSnapshot", {}).get("state") == COMPLETED and
               durable_snapshot(sync_status)["fidelity"] == VOLUMES,
               "synchronous VOLUMES suspend did not retain a completed local snapshot")
     print("PASS: Chapter 5 async MEMORY state survives atelet restart; async/sync VOLUMES suspends preserve files and reset memory", flush=True)
@@ -557,9 +558,12 @@ def verify_identity_and_policy(first, second):
     ungranted = {"replaceHeaders": [{"header": "Authorization", "prefix": "Bearer ", "credentialUri": UNGRANTED_URI}]}
     set_policy(first, [{"http": {"hostnames": [SOURCE_CONTROL_HOST], "effects": ungranted}}])
     refused = publish_until(first, "provider refusal", lambda outcome: outcome["status"] == 403)
-    # The gateway returns the provider message as text with escaped quotes.
-    lab.check(NOT_PERMITTED in json.dumps(refused["response"]).replace("\\", ""),
-              f"403 does not carry the chapter's provider message: {refused}")
+    # The Actor sees only a generic denial; the gateway logs the provider's reason.
+    lab.check(refused["response"] == "actor egress policy denied",
+              f"403 body differs from the chapter: {refused}")
+    egress_log = lab.run_command("kubectl", "--context", lab.CONTEXT, "logs", "deployment/atenet-egress",
+                                 "-n", "ate-system", "--since=5m").stdout.replace("\\", "")
+    lab.check(NOT_PERMITTED in egress_log, "egress gateway did not log the provider's refusal")
     lab.check(len(lab.request("/api/source-control/pulls")["pulls"]) == len(pulls),
               "a refused credential request still reached the service")
     print("PASS: Chapter 6.4 provider refuses a Secret outside the Atespace grant and the gateway fails closed",

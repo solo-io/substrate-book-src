@@ -7,7 +7,7 @@ metadata:
 
 ---
 
-apiVersion: ate.dev/v1alpha1
+apiVersion: ate.dev/v1
 kind: WorkerPool
 metadata:
   name: generic-worker
@@ -120,7 +120,11 @@ spec:
         image: __WEBAPP_IMAGE__
         env:
         - name: AGENT_URL
-          value: http://atenet-router.ate-system.svc.cluster.local
+          value: https://atenet-router.ate-system.svc
+        - name: AGENT_CLIENT_CERT
+          value: /run/router-client/credential-bundle.pem
+        - name: AGENT_CA_FILE
+          value: /run/router-client/trust-bundle.pem
         - name: ATE_CLI
           value: /usr/local/bin/kubectl-ate
         - name: ATE_ENDPOINT
@@ -141,6 +145,26 @@ spec:
           httpGet:
             path: /readyz
             port: 80
+        volumeMounts:
+        - name: router-client
+          mountPath: /run/router-client
+          readOnly: true
+      # The router admits this Pod's SPIFFE ID, which manifests/substrate-values.yaml
+      # lists in atenetRouter.ingressAllowedSPIFFEIDs.
+      volumes:
+      - name: router-client
+        projected:
+          sources:
+          - podCertificate:
+              signerName: podidentity.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+          - clusterTrustBundle:
+              signerName: servicedns.podcert.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
 
 ---
 

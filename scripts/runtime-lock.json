@@ -1,33 +1,33 @@
 {
-  "version": "v0.6.0",
+  "version": "v1.0.0-rc1",
   "charts": {
     "substrate-crds": {
-      "sha256": "c7804bf6c7a11a3db501e9f6e7840d49300e5b51062de6c481810acf052cbb76",
-      "ociDigest": "sha256:d8d6732430ee086e61a00d5e28311c3491d070b0b74038f98372a83c76c5ba0c"
+      "sha256": "62db164c59df8e365f5082bdb8bf71ce90d854452de94d2206f95628f6a90d7c",
+      "ociDigest": "sha256:b9c027a1d4f2de90f13496c3bd5923a017392b1d3d4ecb2711ada107c5403e87"
     },
     "substrate-podcert": {
-      "sha256": "fcfdcfc8538c211a7aee6e1dd267ee87396142bd945147bb5132464e4642eff8",
-      "ociDigest": "sha256:02ab06857ed9f8684dcd43a677e84da7e3770de34c9f1f0717205918f0098b45"
+      "sha256": "efb7c53308da1a2d3065458561401aa27f188040c3eae19a2492bb162d8867bf",
+      "ociDigest": "sha256:e126ed36bba44823b1948a0d72c22eacbc6f880c3a7e0598bbf6ebc19361a59f"
     },
     "substrate": {
-      "sha256": "e88aa7da19160eccbd5b8bd28d5390405e0d2cf9142b27a23e59558e45770fe0",
-      "ociDigest": "sha256:0ae17eb519d5e9cb75d430f5051149c3e00fefa1fe7e6a8b81923fa9f31108ae"
+      "sha256": "ea5da01f36faa2c613c3dd2e764a0ec95e814ce3e0ee135e63fb5c0aa30ac212",
+      "ociDigest": "sha256:b241353b8ed882b848710c56ad4f86102b8d3c957e227df79193d0fb5e97e9d6"
     }
   },
   "images": {
-    "ghcr.io/kagent-dev/substrate/ateapi:v0.6.0": "ghcr.io/kagent-dev/substrate/ateapi:v0.6.0@sha256:9dd87a47d8b53eed985ef9998bda5d5646c493c3230f57231599501dc028f92b",
-    "ghcr.io/kagent-dev/substrate/ate-idp-server:v0.6.0": "ghcr.io/kagent-dev/substrate/ate-idp-server:v0.6.0@sha256:44ec09ab83cb045e74f679a8b64090a9404b70af90a8d7b387ed2c1c91d3413e",
-    "ghcr.io/kagent-dev/substrate/atelet:v0.6.0": "ghcr.io/kagent-dev/substrate/atelet:v0.6.0@sha256:f6d8174990c726ae4f64e6179879e88549e750ac915e74f75d5d9bab37d14f8f",
-    "ghcr.io/kagent-dev/substrate/atecontroller:v0.6.0": "ghcr.io/kagent-dev/substrate/atecontroller:v0.6.0@sha256:0c00de9aec6a30df20873da5d8401c22fda485ad8553218d753e1a729423c99a",
-    "ghcr.io/kagent-dev/substrate/kubernetes-secrets:v0.6.0": "ghcr.io/kagent-dev/substrate/kubernetes-secrets:v0.6.0@sha256:ca51b37e220d4c063301936ea531e06a8839237656b25deeca00265b6446cfa4",
-    "ghcr.io/kagent-dev/substrate/podcertcontroller:v0.6.0": "ghcr.io/kagent-dev/substrate/podcertcontroller:v0.6.0@sha256:e4c5b52221779bb3e6d705b30cdec8069753d44588abbc41b470fb1948481e23",
-    "ghcr.io/kagent-dev/substrate/objectstore-plugin:v0.6.0": "ghcr.io/kagent-dev/substrate/objectstore-plugin:v0.6.0@sha256:c9d2e546ff6acfadbc0cf33909d1ec0486fcc751562a44e0dff41a1e9ec36df4",
+    "ghcr.io/kagent-dev/substrate/ateapi:v1.0.0-rc1": "ghcr.io/kagent-dev/substrate/ateapi:v1.0.0-rc1@sha256:ad3ef1320c946eee8d2859a0f6bdd2bfb78599fcd3cc38086111aafdfafa6629",
+    "ghcr.io/kagent-dev/substrate/ate-idp-server:v1.0.0-rc1": "ghcr.io/kagent-dev/substrate/ate-idp-server:v1.0.0-rc1@sha256:63177c5903a351b0fdbaa40ae72aefb883ea1c06d43cad2599656ec088081ca3",
+    "ghcr.io/kagent-dev/substrate/atelet:v1.0.0-rc1": "ghcr.io/kagent-dev/substrate/atelet:v1.0.0-rc1@sha256:930dc4ea1954a12ff9431d9b3c38dce645dd83cb8df434825f1cf29070b7223f",
+    "ghcr.io/kagent-dev/substrate/atecontroller:v1.0.0-rc1": "ghcr.io/kagent-dev/substrate/atecontroller:v1.0.0-rc1@sha256:a773c5341d20813adbe2c889eeda4a9283910ce1c8735675ed8a12849ac77c7d",
+    "ghcr.io/kagent-dev/substrate/kubernetes-secrets:v1.0.0-rc1": "ghcr.io/kagent-dev/substrate/kubernetes-secrets:v1.0.0-rc1@sha256:c610c7a50322eab8597c7ed2389aa18986bfae4b481893b51fbb6235868afb9b",
+    "ghcr.io/kagent-dev/substrate/podcertcontroller:v1.0.0-rc1": "ghcr.io/kagent-dev/substrate/podcertcontroller:v1.0.0-rc1@sha256:e814875d8cfdd3d6dbcf09f4295dc800eccbe5d9058996a4fb27798c2f922a70",
+    "ghcr.io/kagent-dev/substrate/objectstore-plugin:v1.0.0-rc1": "ghcr.io/kagent-dev/substrate/objectstore-plugin:v1.0.0-rc1@sha256:0c38d0ca57fa4cc5d84cd5040904ed9b53fb5744a50dcd95ee540ee2e567d3dc",
     "busybox:1.36": "busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
     "registry:3": "registry:3@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8",
-    "ghcr.io/kagent-dev/substrate/ateworker-gvisor:v0.6.0": "ghcr.io/kagent-dev/substrate/ateworker-gvisor:v0.6.0@sha256:23cad1beeccb402d66f317dad953223028f9aac7468e880b06f84ae1ea5e2c72",
-    "ghcr.io/kagent-dev/substrate/agentgateway:cd65181fd52e@sha256:ebebf5a7fa2a54fb524ccce1f6f74ee6e7ef22d661f22e212717fd0a68dadb33": "ghcr.io/kagent-dev/substrate/agentgateway:cd65181fd52e@sha256:ebebf5a7fa2a54fb524ccce1f6f74ee6e7ef22d661f22e212717fd0a68dadb33",
-    "rustfs/rustfs:1.0.0-beta.3": "rustfs/rustfs:1.0.0-beta.3@sha256:378642b05b7dcb4849fb77ebe6aca4ced1c3f66e7e504247df95a5c9018d3358",
+    "ghcr.io/kagent-dev/substrate/ateworker-gvisor:v1.0.0-rc1": "ghcr.io/kagent-dev/substrate/ateworker-gvisor:v1.0.0-rc1@sha256:e56eb227908c5cca0edcabb5c72a9f20f6c525ab66e5131837084379d4095279",
+    "cr.agentgateway.dev/agentgateway:v1.7.0@sha256:60216aafb03d37f94e952ff3d51d2f630a65b10ecaebdc0a864882f92610c45b": "cr.agentgateway.dev/agentgateway:v1.7.0@sha256:60216aafb03d37f94e952ff3d51d2f630a65b10ecaebdc0a864882f92610c45b",
+    "rustfs/rustfs:1.0.3": "rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b",
     "postgres:18-alpine": "postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
-    "amazon/aws-cli:2.17.0": "amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73"
+    "amazon/aws-cli:2.38.5": "amazon/aws-cli:2.38.5@sha256:c8156a0e74e13929a42d7e60f0d4e14e7d28d980cd21822505d4bff80e5460c1"
   }
 }

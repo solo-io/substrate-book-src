@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 import subprocess
 import threading
 from http import HTTPStatus
@@ -171,6 +172,10 @@ class LocalActorManager:
 class WebAppHandler(BaseHTTPRequestHandler):
     index_html: bytes
     agent_url: str
+    # The router admits only mTLS clients whose SPIFFE ID it allows. Both files
+    # are projected and rotated by the kubelet, so they are read per request.
+    agent_client_cert: str = ""
+    agent_ca_file: str = ""
     source_control_url: str = ""
     atespace: str
     manager: object
@@ -209,8 +214,12 @@ class WebAppHandler(BaseHTTPRequestHandler):
         if self.headers.get("Content-Type"):
             headers["Content-Type"] = self.headers["Content-Type"]
         request = Request(upstream_url, data=body, headers=headers, method=self.command)
+        context = None
+        if self.agent_client_cert:
+            context = ssl.create_default_context(cafile=self.agent_ca_file or None)
+            context.load_cert_chain(self.agent_client_cert)
         try:
-            with urlopen(request, timeout=600) as response:
+            with urlopen(request, timeout=600, context=context) as response:
                 self._write(response.status, response.headers.get_content_type(), response.read())
         except HTTPError as exc:
             self._write(exc.code, exc.headers.get_content_type(), exc.read())
@@ -311,7 +320,9 @@ def run_server() -> None:
     app_dir = Path(__file__).resolve().parent
     port = int(os.environ.get("PORT", "80"))
     WebAppHandler.index_html = (app_dir / "index.html").read_bytes()
-    WebAppHandler.agent_url = os.environ.get("AGENT_URL", "http://atenet-router.ate-system.svc.cluster.local")
+    WebAppHandler.agent_url = os.environ.get("AGENT_URL", "https://atenet-router.ate-system.svc")
+    WebAppHandler.agent_client_cert = os.environ.get("AGENT_CLIENT_CERT", "")
+    WebAppHandler.agent_ca_file = os.environ.get("AGENT_CA_FILE", "")
     WebAppHandler.source_control_url = os.environ.get("SOURCE_CONTROL_URL", "")
     WebAppHandler.manager = build_manager()
     WebAppHandler.atespace = WebAppHandler.manager.atespace

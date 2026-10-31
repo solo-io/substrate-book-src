@@ -6,7 +6,7 @@ The full-lab target environments are macOS with Docker, Linux with Docker, and W
 
 When upgrading the runtime, update the version, all four CLI checksums, all three chart package checksums and OCI digests, and the release image digests together. Resolve image tags to their multi-platform index digests, download the charts to compute the archive checksums, then render the charts with the post-renderer and run the disposable lab suite. Chart checksum failures and unknown rendered images must be resolved explicitly rather than bypassed.
 
-The v0.6.0 setup has a strict dependency order: CRDs, three CA pools, the separate certificate-controller release, its live trust bundles, PostgreSQL, the owner/read-write roles and connection Secrets, application authentication, and finally the main chart. A later failure can hide the first bootstrap problem, so collect diagnostics before rerunning over a partial installation. The lab targets fresh clusters; it does not migrate Actors, snapshots, or PostgreSQL data from an earlier build.
+The v1.0.0-rc1 setup has a strict dependency order: CRDs, three CA pools, the separate certificate-controller release, its live trust bundles, PostgreSQL, the owner/read-write roles and connection Secrets, application authentication, and finally the main chart. A later failure can hide the first bootstrap problem, so collect diagnostics before rerunning over a partial installation. The lab targets fresh clusters; it does not migrate Actors, snapshots, or PostgreSQL data from an earlier build.
 
 ## One command for a disposable lab
 
