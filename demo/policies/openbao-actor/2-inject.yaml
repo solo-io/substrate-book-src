@@ -1,0 +1,9 @@
+rules:
+- http:
+    hostnames:
+    - source-control.book-workbench.svc.cluster.local
+    effects:
+      replaceHeaders:
+      - header: Authorization
+        prefix: "Bearer "
+        credentialUri: ate-secret://openbao-actor/kv/secret/atespaces/book-workbench/source-control/token

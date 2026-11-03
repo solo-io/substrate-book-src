@@ -13,6 +13,20 @@
 #   ./scripts/live-demo.sh --no-prep     # present against an already-prepped lab
 #   ./scripts/live-demo.sh --auto 2      # rehearse hands-free, 2s per pause
 #   ./scripts/live-demo.sh --logs right  # log pane beside instead of below
+#   ./scripts/live-demo.sh --broker openbao
+#   ./scripts/live-demo.sh --broker openbao-actor
+#
+# --broker openbao tells the same story with the token in OpenBao instead of a
+# Kubernetes Secret (install it first with setup-openbao.sh). The provider logs
+# in to OpenBao as its own ServiceAccount: step 4 shows the token in OpenBao and
+# OpenBao's audit log recording the provider's read on the Actor's behalf, and
+# step 5 shows the provider refusing another Atespace's token to this Actor.
+#
+# --broker openbao-actor uses the actor-jwt provider, which setup-openbao.sh
+# installs alongside it. It logs in to OpenBao as the Actor itself: OpenBao's audit
+# log names the Actor, and in step 5 OpenBao's own policy refuses.
+#
+# docs/openbao-credential-walkthrough.md is the long form of both.
 #
 # Inside tmux it opens a pane that follows the source-control service's request
 # log (scripts/demo-logs.sh), so the audience sees each request arrive with the
@@ -34,9 +48,12 @@ PREP=true
 CHECK_SNIPPETS=false
 AUTO=""
 LOGS=bottom
+BROKER=k8s
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-prep) PREP=false ;;
+    --broker) BROKER="${2:-}"; shift
+              [[ "${BROKER}" =~ ^(k8s|openbao|openbao-actor)$ ]] || { echo "--broker takes k8s, openbao, or openbao-actor" >&2; exit 2; } ;;
     --check-snippets) CHECK_SNIPPETS=true ;;
     --auto) AUTO="${2:-2}"; shift ;;
     --logs) LOGS="${2:-}"; shift
@@ -258,9 +275,11 @@ pulls() {
   local last
   last="$(wb /api/source-control/pulls | jq -c '.pulls[-1] // empty')"
   [[ -n "${last}" ]] || return 0
-  jq -r --arg secret "${SECRET}" --arg g "${GRN}" --arg y "${YLW}" --arg r "${RST}" '
+  local source="Secret workbench-secrets/git-token"
+  [[ "${BROKER}" == openbao* ]] && source="OpenBao ${OPENBAO_SECRET_PATH}"
+  jq -r --arg secret "${SECRET}" --arg source "${source}" --arg g "${GRN}" --arg y "${YLW}" --arg r "${RST}" '
     "PR #\(.number) by account \($y)\(.authenticatedAs)\($r)",
-    "token  \($y)\(.token)\($r)  \(if .token == $secret then "\($g)✔ the real token from Secret workbench-secrets/git-token\($r)" else "" end)"' <<<"${last}"
+    "token  \($y)\(.token)\($r)  \(if .token == $secret then "\($g)✔ the real token from \($source)\($r)" else "" end)"' <<<"${last}"
   if jq -e '.actorAssertion' <<<"${last}" >/dev/null; then
     jwt_decode "$(jq -r '.actorAssertion' <<<"${last}")"
   fi
@@ -276,6 +295,37 @@ jwt_decode() {
       split(".")[if $part == "header" then 0 else 1 end] | gsub("-"; "+") | gsub("_"; "/") |
       (. + ("=" * ((4 - length % 4) % 4))) | @base64d | fromjson' <<<"$1"
   done
+}
+
+# What OpenBao's audit log recorded for the providers: each login and each
+# read, by who OpenBao authenticated (the provider's ServiceAccount, or an
+# Actor's own entity), the Actor a read was for, and whether it was allowed.
+openbao_audit() {
+  command kubectl --context "${CTX}" logs -n openbao deployment/openbao --since-time="${AUDIT_SINCE}" 2>/dev/null |
+    jq -rR --arg g "${GRN}" --arg y "${YLW}" --arg c "${CYN}" --arg rd "${RED}" --arg r "${RST}" --arg d "${DIM}" '
+      fromjson? | select(.type == "response")
+      | select((.auth.display_name // "") | test("^(jwt|kubernetes)-"))
+      | select((.request.path | test("^auth/(jwt|kubernetes)/login$")) or (.request.path | startswith("secret/data/")))
+      | (.request.path | endswith("/login")) as $login
+      | (if .auth.metadata.service_account_name
+         then "sa \(.auth.metadata.service_account_namespace)/\(.auth.metadata.service_account_name)"
+         else .auth.display_name | sub("^jwt-"; "") end) as $who
+      | (.request.headers["x-substrate-actor"][0] // "") as $for
+      | "\($d)\(.time[11:19])\($r)  \(if $login then "login" else "read " end)  \($y)\($who)\($r)"
+        + (if $login then "" else "  \(.request.path | sub("^secret/data/"; ""))" end)
+        + (if $login or $for == "" or ($who | startswith("actor/")) then "" else "  \($c)for \($for)\($r)" end)
+        + "  \(if .error then "\($rd)✘ \(.error | gsub("[\\n\\t]+"; " ") | sub("^1 error occurred: \\* "; "") | sub(" +$"; ""))\($r)" else "\($g)✔\($r)" end)"' |
+    tail -n 3
+}
+
+# The default OpenBao provider's last refusal, from its own log.
+provider_refusal() {
+  command kubectl --context "${CTX}" logs -n "${OPENBAO_PROVIDER_NAMESPACE}" deployment/openbao-credential-provider \
+      --since-time="${AUDIT_SINCE}" 2>/dev/null |
+    jq -rR --arg rd "${RED}" --arg y "${YLW}" --arg r "${RST}" '
+      fromjson? | select(.msg | startswith("credential request denied"))
+      | "\($rd)✘ \(.msg | sub("^credential request denied: "; ""))\($r)\n  actor \($y)\(.actor)\($r)  secret \($y)\(.secret)\($r)"' |
+    tail -n 2
 }
 
 # Show a policy file, marking lines that are new since the previous one.
@@ -361,13 +411,15 @@ cat <<EOF
   ${ACC}${B}│${RST}  ${GRY}credential brokering with Agent Substrate${RST}               ${ACC}${B}│${RST}
   ${ACC}${B}└──────────────────────────────────────────────────────────┘${RST}
 
-  ${GRY}lab ${RST}${CTX}  ${GRY}substrate ${RST}${SUBSTRATE_VERSION}
+  ${GRY}lab ${RST}${CTX}  ${GRY}substrate ${RST}${SUBSTRATE_VERSION}  ${GRY}broker ${RST}$(case "${BROKER}" in openbao) echo OpenBao ;; openbao-actor) echo "OpenBao, as each Actor" ;; *) echo "Kubernetes Secret" ;; esac)
 
 EOF
 
 if [[ "${PREP}" == true ]]; then
   prep_log="$(mktemp -t live-demo-prep)"
-  "${BOOK_EXAMPLES_ROOT}/scripts/prep-credential-demo.sh" --show-secrets >"${prep_log}" 2>&1 &
+  prep_script=prep-credential-demo.sh
+  [[ "${BROKER}" == openbao* ]] && prep_script=prep-openbao-demo.sh
+  "${BOOK_EXAMPLES_ROOT}/scripts/${prep_script}" --show-secrets >"${prep_log}" 2>&1 &
   prep_pid=$!
   spin "resetting the lab: no Actors, fresh source-control, empty gateway cache…" "${prep_pid}"
   if ! wait "${prep_pid}"; then
@@ -392,6 +444,8 @@ elif ate get actor "${A1}" -a "${NS}" >/dev/null 2>&1; then
 fi
 SECRET="$(command kubectl --context "${CTX}" get secret git-token -n workbench-secrets -o jsonpath='{.data.token}' |
   base64 -d)"
+# OpenBao's audit view shows only this run's requests.
+AUDIT_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # The log pane starts after prep so it follows the fresh source-control Pod.
 if [[ "${LOGS}" != off && -n "${TMUX:-}" ]] && command -v tmux >/dev/null; then
@@ -406,6 +460,13 @@ fi
 pause "start"
 
 # ── setup ────────────────────────────────────────────────────────────────────
+if [[ "${BROKER}" == openbao* ]]; then
+  TOKEN_HOME_1="the token: in OpenBao,"
+  TOKEN_HOME_2="outside the cluster's Secrets"
+else
+  TOKEN_HOME_1="the token: a Kubernetes"
+  TOKEN_HOME_2="Secret, outside the sandbox"
+fi
 clear
 hr "${ACC}"
 printf '  %sThe setup%s\n' "${B}" "${RST}"
@@ -418,8 +479,8 @@ cat <<EOF
   │ fixes a bug,     │     │ policy and   │     │ requires a Bearer   │
   │ opens a PR       │     │ credentials  │     │ token               │
   └──────────────────┘     └──────────────┘     └─────────────────────┘
-    ${YLW}holds no token${RST}                           ${GRY}the token: a Kubernetes${RST}
-                                             ${GRY}Secret, outside the sandbox${RST}
+    ${YLW}holds no token${RST}                           ${GRY}${TOKEN_HOME_1}${RST}
+                                             ${GRY}${TOKEN_HOME_2}${RST}
 
   ${B}How does the agent open a PR without ever holding the token?${RST}
 EOF
@@ -459,6 +520,116 @@ EXPECT_ROUTED=true run "actor ${A1} publish"
 if [[ -n "${LOG_PANE}" ]]; then say "The server pane shows exactly what arrived: the dummy key."; fi
 takeaway "No credential config, no access. The server got the literal dummy key."
 pause
+
+# ── 4-5, OpenBao, provider's ServiceAccount ──────────────────────────────────
+if [[ "${BROKER}" == openbao ]]; then
+  step 4 "AgentGateway injects a token from OpenBao"
+  say "Same agent, same dummy key. This time the token lives in OpenBao:"
+  run "bao kv get -field=token ${OPENBAO_SECRET_PATH}; echo"
+  say "The rule names it by an ${YLW}ate-secret://openbao/...${RST} URI:"
+  show_policy demo/policies/openbao/2-inject.yaml demo/policies/1-allow.yaml
+  apply_policy demo/policies/openbao/2-inject.yaml
+  EXPECT_ROUTED=true run "actor ${A1} publish"
+  if [[ -n "${LOG_PANE}" ]]; then
+    say "The server pane: the real bearer token arrived, the one from OpenBao."
+  else
+    say "What the service received:"
+    run "pulls"
+  fi
+  say "The provider logged in to OpenBao as its own ServiceAccount, Kubernetes auth,"
+  say "and named the Actor it read for in a request header OpenBao audits:"
+  run "openbao_audit"
+  takeaway "One broker identity reads from OpenBao, and the audit log says which Actor each read was for."
+  pause
+
+  step 5 "The provider decides what this Actor may read"
+  say "Point the same rule at another Atespace's token, team-a's:"
+  show_policy demo/policies/openbao/3-other-atespace.yaml demo/policies/openbao/2-inject.yaml
+  apply_policy demo/policies/openbao/3-other-atespace.yaml
+  EXPECT_ROUTED=true run "actor ${A1} publish"
+  say "OpenBao would allow the provider this read. The provider refused it first:"
+  run "provider_refusal"
+  say "OpenBao never saw the request; its log still ends at step 4:"
+  run "openbao_audit"
+  takeaway "A policy can name any path. The provider keeps each Actor to its own Atespace's secrets, and the gateway fails closed."
+  pause "finish"
+
+  clear
+  echo
+  hr "${ACC}"
+  printf '  %sThe agent only ever sent "placeholder"%s\n' "${B}" "${RST}"
+  hr "${ACC}"
+  cat <<EOF
+
+  ${GRY}question${RST}                         ${GRY}answered by${RST}
+  Where may this Actor go?         ${CYN}its EgressPolicy${RST}
+  Where does the credential live?  ${CYN}OpenBao, read by the provider's ServiceAccount${RST}
+  Who may read which credential?   ${CYN}the provider: each Actor its own Atespace's path${RST}
+  Who read what, and when?         ${CYN}OpenBao's audit log: the provider, for each Actor${RST}
+
+  ${B}The token never enters the sandbox,${RST} and Substrate needed no change: the
+  provider holds an OpenBao login, not Substrate's power to mint Actor tokens.
+
+  ${GRY}Rerun ./scripts/live-demo.sh --broker openbao to reset and present again.${RST}
+
+EOF
+  if [[ -n "${LOG_PANE}" ]]; then pause "close"; fi
+  exit 0
+fi
+
+# ── 4-5, OpenBao, as each Actor ──────────────────────────────────────────────
+if [[ "${BROKER}" == openbao-actor ]]; then
+  step 4 "AgentGateway injects a token from OpenBao"
+  say "Same agent, same dummy key. This time the token lives in OpenBao:"
+  run "bao kv get -field=token ${OPENBAO_SECRET_PATH}; echo"
+  say "The rule names it by an ${YLW}ate-secret://openbao-actor/...${RST} URI:"
+  show_policy demo/policies/openbao-actor/2-inject.yaml demo/policies/1-allow.yaml
+  apply_policy demo/policies/openbao-actor/2-inject.yaml
+  EXPECT_ROUTED=true run "actor ${A1} publish"
+  if [[ -n "${LOG_PANE}" ]]; then
+    say "The server pane: the real bearer token arrived, the one from OpenBao."
+  else
+    say "What the service received:"
+    run "pulls"
+  fi
+  say "Who read it from OpenBao? Not a shared broker account. The provider logged in"
+  say "as this Actor, with a Substrate-minted Actor JWT, and read with its token:"
+  run "openbao_audit"
+  takeaway "OpenBao saw ${A1} itself log in and read the token. The agent never held it."
+  pause
+
+  step 5 "OpenBao decides what this Actor may read"
+  say "Point the same rule at another Atespace's token, team-a's:"
+  show_policy demo/policies/openbao-actor/3-other-atespace.yaml demo/policies/openbao-actor/2-inject.yaml
+  apply_policy demo/policies/openbao-actor/3-other-atespace.yaml
+  EXPECT_ROUTED=true run "actor ${A1} publish"
+  say "OpenBao's policy keys on the Atespace in the Actor's JWT:"
+  run "openbao_audit"
+  takeaway "A policy can name any path. OpenBao refuses what this Actor may not read, and the gateway fails closed."
+  pause "finish"
+
+  clear
+  echo
+  hr "${ACC}"
+  printf '  %sThe agent only ever sent "placeholder"%s\n' "${B}" "${RST}"
+  hr "${ACC}"
+  cat <<EOF
+
+  ${GRY}question${RST}                         ${GRY}answered by${RST}
+  Where may this Actor go?         ${CYN}its EgressPolicy${RST}
+  Where does the credential live?  ${CYN}OpenBao, read with the Actor's own login${RST}
+  Who may read which credential?   ${CYN}OpenBao's policy, keyed on Substrate's Actor JWT${RST}
+  Who read what, and when?         ${CYN}OpenBao's audit log, by Actor${RST}
+
+  ${B}The token never enters the sandbox,${RST} and no broker account reads on the
+  Actors' behalf: OpenBao authorizes and audits each Actor itself.
+
+  ${GRY}Rerun ./scripts/live-demo.sh --broker openbao-actor to reset and present again.${RST}
+
+EOF
+  if [[ -n "${LOG_PANE}" ]]; then pause "close"; fi
+  exit 0
+fi
 
 # ── 4 ────────────────────────────────────────────────────────────────────────
 step 4 "AgentGateway injects the real credential"

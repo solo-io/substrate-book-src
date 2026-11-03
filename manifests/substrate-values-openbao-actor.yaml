@@ -1,0 +1,14 @@
+# Chart values scripts/setup-openbao.sh layers over substrate-values.yaml for
+# the openbao-actor provider. The openbao provider needs none of this.
+#
+# The actor-jwt provider logs in to OpenBao as each Actor with an Actor JWT it
+# mints through ate-api-server, which only the egress_gateway role may do. This
+# grants the role to the provider's pod identity as well as the gateway's. The
+# role mints JWTs for every Actor, toward any audience, and reads every egress
+# policy: grant it only to a provider you trust as much as the gateway.
+#
+# When a chart release carries a dedicated value for extra egress_gateway
+# identities, use it in place of extraArgs.
+ateApi:
+  extraArgs:
+  - --egress-gateway-spiffe-id=spiffe://cluster.local/ns/credprovider-openbao-actor/sa/openbao-credential-provider
