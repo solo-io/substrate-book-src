@@ -55,7 +55,8 @@ Then press any key to run each command or advance; `q` quits. The story:
 | 3. No credential config | An egress policy that only allows the git server, then a publish | `401` from the git server, which received the dummy key. |
 | 4. A token from OpenBao | `bao kv get` of the token, a policy naming `ate-secret://openbao/...`, a publish, OpenBao's audit log | `201`. The provider logged in as its ServiceAccount, read the token, and named the Actor in the audit log. |
 | 5. The provider decides | A policy naming team-a's token, a publish, the provider's log, OpenBao's audit log | `403`. The provider refused before asking OpenBao, and OpenBao's log has no new entry. |
-| Wrap-up | | Who answers each question: the EgressPolicy, OpenBao, the provider, OpenBao's audit log. |
+| 6. Its identity on egress | A policy that also injects an `Actor-Assertion` header, a publish, the Actor's UID | `201`. Next to the OpenBao token, the gateway injects a Substrate-minted Actor JWT, and the git server verifies it and records the Actor's UID. |
+| Wrap-up | | Who answers each question: the EgressPolicy, OpenBao, the provider, OpenBao's audit log, the Actor JWT. |
 
 To present again, rerun the same command; it resets the lab.
 

@@ -340,10 +340,11 @@ class OpenBaoDemoTest(unittest.TestCase):
         self.assertIn('OPENBAO_ACTOR_CREDENTIAL_URI="ate-secret://${OPENBAO_ACTOR_PROVIDER_NAME}/kv/${OPENBAO_SECRET_PATH}/token"', lib)
         for provider in ("openbao", "openbao-actor"):
             policies = set(re.findall(rf"demo/policies/{provider}/[\w-]+\.yaml", script))
-            self.assertEqual(len(policies), 2, provider)
+            self.assertEqual(len(policies), 3, provider)
             for policy in policies:
                 self.assertTrue((ROOT / policy).is_file(), policy)
-            for policy, atespace in (("2-inject", "book-workbench"), ("3-other-atespace", "team-a")):
+            for policy, atespace in (("2-inject", "book-workbench"), ("3-other-atespace", "team-a"),
+                                     ("4-assert", "book-workbench")):
                 uri = f"ate-secret://{provider}/kv/secret/atespaces/{atespace}/source-control/token"
                 self.assertIn(f"credentialUri: {uri}\n", (ROOT / f"demo/policies/{provider}/{policy}.yaml").read_text())
 

@@ -19,12 +19,15 @@
 # --broker openbao tells the same story with the token in OpenBao instead of a
 # Kubernetes Secret (install it first with setup-openbao.sh). The provider logs
 # in to OpenBao as its own ServiceAccount: step 4 shows the token in OpenBao and
-# OpenBao's audit log recording the provider's read on the Actor's behalf, and
-# step 5 shows the provider refusing another Atespace's token to this Actor.
+# OpenBao's audit log recording the provider's read on the Actor's behalf,
+# step 5 shows the provider refusing another Atespace's token to this Actor,
+# and step 6 adds the Actor's identity on egress, as the Kubernetes version's
+# step 5 does.
 #
 # --broker openbao-actor uses the actor-jwt provider, which setup-openbao.sh
 # installs alongside it. It logs in to OpenBao as the Actor itself: OpenBao's audit
-# log names the Actor, and in step 5 OpenBao's own policy refuses.
+# log names the Actor, in step 5 OpenBao's own policy refuses, and step 6 adds
+# the Actor's identity on egress.
 #
 # docs/openbao-credential-walkthrough.md is the long form of both.
 #
@@ -67,6 +70,7 @@ CTX="${KUBECTL_CONTEXT}"
 NS="${BOOK_ATESPACE}"
 A1="${BOOK_ACTOR_PREFIX}-1"
 TOTAL=5
+[[ "${BROKER}" == openbao* ]] && TOTAL=6
 
 # ── look ─────────────────────────────────────────────────────────────────────
 ESC=$'\033'
@@ -521,7 +525,28 @@ if [[ -n "${LOG_PANE}" ]]; then say "The server pane shows exactly what arrived:
 takeaway "No credential config, no access. The server got the literal dummy key."
 pause
 
-# ── 4-5, OpenBao, provider's ServiceAccount ──────────────────────────────────
+# identity_step N POLICY PREVIOUS: the gateway injects a Substrate-minted Actor
+# JWT next to the token, and the service verifies which Actor is calling.
+identity_step() {
+  local n="$1" policy="$2" previous="$3"
+  step "${n}" "Which agent is calling? Its identity on egress"
+  say "The token says ${YLW}repo-workbench-bot${RST}: a shared account. Who is actually calling?"
+  say "Ask the gateway to inject a Substrate-signed JWT for this exact Actor:"
+  show_policy "${policy}" "${previous}"
+  apply_policy "${policy}"
+  EXPECT_ROUTED=true run "actor ${A1} publish --assert"
+  if [[ -n "${LOG_PANE}" ]]; then
+    say "The server pane: a signed JWT arrived and verified, naming this exact Actor."
+  else
+    say "What the service received:"
+    run "pulls"
+  fi
+  run "kubectl ate get actor ${A1} -a ${NS} -o json | jq -r .metadata.uid"
+  takeaway "The service verified the signature: this exact Actor, by UID. No secret in the agent."
+  pause "finish"
+}
+
+# ── 4-6, OpenBao, provider's ServiceAccount ──────────────────────────────────
 if [[ "${BROKER}" == openbao ]]; then
   step 4 "AgentGateway injects a token from OpenBao"
   say "Same agent, same dummy key. This time the token lives in OpenBao:"
@@ -552,7 +577,9 @@ if [[ "${BROKER}" == openbao ]]; then
   say "OpenBao never saw the request; its log still ends at step 4:"
   run "openbao_audit"
   takeaway "A policy can name any path. The provider keeps each Actor to its own Atespace's secrets, and the gateway fails closed."
-  pause "finish"
+  pause
+
+  identity_step 6 demo/policies/openbao/4-assert.yaml demo/policies/openbao/2-inject.yaml
 
   clear
   echo
@@ -566,6 +593,7 @@ if [[ "${BROKER}" == openbao ]]; then
   Where does the credential live?  ${CYN}OpenBao, read by the provider's ServiceAccount${RST}
   Who may read which credential?   ${CYN}the provider: each Actor its own Atespace's path${RST}
   Who read what, and when?         ${CYN}OpenBao's audit log: the provider, for each Actor${RST}
+  Who is really calling?           ${CYN}a Substrate-minted Actor JWT${RST}
 
   ${B}The token never enters the sandbox,${RST} and Substrate needed no change: the
   provider holds an OpenBao login, not Substrate's power to mint Actor tokens.
@@ -577,7 +605,7 @@ EOF
   exit 0
 fi
 
-# ── 4-5, OpenBao, as each Actor ──────────────────────────────────────────────
+# ── 4-6, OpenBao, as each Actor ──────────────────────────────────────────────
 if [[ "${BROKER}" == openbao-actor ]]; then
   step 4 "AgentGateway injects a token from OpenBao"
   say "Same agent, same dummy key. This time the token lives in OpenBao:"
@@ -606,7 +634,9 @@ if [[ "${BROKER}" == openbao-actor ]]; then
   say "OpenBao's policy keys on the Atespace in the Actor's JWT:"
   run "openbao_audit"
   takeaway "A policy can name any path. OpenBao refuses what this Actor may not read, and the gateway fails closed."
-  pause "finish"
+  pause
+
+  identity_step 6 demo/policies/openbao-actor/4-assert.yaml demo/policies/openbao-actor/2-inject.yaml
 
   clear
   echo
@@ -620,6 +650,7 @@ if [[ "${BROKER}" == openbao-actor ]]; then
   Where does the credential live?  ${CYN}OpenBao, read with the Actor's own login${RST}
   Who may read which credential?   ${CYN}OpenBao's policy, keyed on Substrate's Actor JWT${RST}
   Who read what, and when?         ${CYN}OpenBao's audit log, by Actor${RST}
+  Who is really calling?           ${CYN}a Substrate-minted Actor JWT${RST}
 
   ${B}The token never enters the sandbox,${RST} and no broker account reads on the
   Actors' behalf: OpenBao authorizes and audits each Actor itself.
@@ -650,21 +681,7 @@ takeaway "The agent sent 'placeholder'. The service got the real token. The agen
 pause
 
 # ── 5 ────────────────────────────────────────────────────────────────────────
-step 5 "Which agent is calling? Its identity on egress"
-say "The token says ${YLW}repo-workbench-bot${RST}: a shared account. Who is actually calling?"
-say "Ask the gateway to inject a Substrate-signed JWT for this exact Actor:"
-show_policy demo/policies/4-assert.yaml demo/policies/2-inject.yaml
-apply_policy demo/policies/4-assert.yaml
-EXPECT_ROUTED=true run "actor ${A1} publish --assert"
-if [[ -n "${LOG_PANE}" ]]; then
-  say "The server pane: a signed JWT arrived and verified, naming this exact Actor."
-else
-  say "What the service received:"
-  run "pulls"
-fi
-run "kubectl ate get actor ${A1} -a ${NS} -o json | jq -r .metadata.uid"
-takeaway "The service verified the signature: this exact Actor, by UID. No secret in the agent."
-pause "finish"
+identity_step 5 demo/policies/4-assert.yaml demo/policies/2-inject.yaml
 
 # ── wrap ─────────────────────────────────────────────────────────────────────
 clear
