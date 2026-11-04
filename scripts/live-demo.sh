@@ -5,9 +5,10 @@
 # card (agent, gateway, git server), then tells a 3-5 minute story in five
 # steps: Substrate basics, the agent's code, a dummy key that
 # fails, gateway credential injection that succeeds, and the Actor's identity
-# on egress. Each command is shown, runs when you press a key, and each step
-# ends with a one-line takeaway. docs/credential-brokering-walkthrough.md is
-# the long form.
+# on egress. Each command is shown and runs when you press a key; its output
+# stays alone on screen until you press another, so you can talk it through.
+# Each step ends with a one-line takeaway. scripts/demo-ui.sh holds these
+# presenter helpers. docs/credential-brokering-walkthrough.md is the long form.
 #
 #   ./scripts/live-demo.sh               # prep, then present
 #   ./scripts/live-demo.sh --no-prep     # present against an already-prepped lab
@@ -73,18 +74,8 @@ TOTAL=5
 [[ "${BROKER}" == openbao* ]] && TOTAL=6
 
 # ── look ─────────────────────────────────────────────────────────────────────
-ESC=$'\033'
-RST="${ESC}[0m" B="${ESC}[1m" DIM="${ESC}[2m"
-ACC="${ESC}[38;5;213m"  # magenta: step chrome
-CYN="${ESC}[38;5;81m"   # commands, YAML keys
-YLW="${ESC}[38;5;221m"  # values worth reading
-GRN="${ESC}[38;5;114m"  # success, takeaways, new policy lines
-RED="${ESC}[38;5;203m"  # blocked
-GRY="${ESC}[38;5;244m"
-COLS="$(tput cols 2>/dev/null || echo 100)"
-((COLS > 110)) && COLS=110
-
-hr() { printf '%s%*s%s\n' "${1:-$GRY}" "${COLS}" '' "${RST}" | sed "s/ /─/g"; }
+# Colors, pause, run, say, takeaway, and spin are shared with talk scripts.
+source "${BOOK_EXAMPLES_ROOT}/scripts/demo-ui.sh"
 
 LOG_PANE=""
 cleanup_tty() {
@@ -94,21 +85,6 @@ cleanup_tty() {
 }
 trap cleanup_tty EXIT
 trap 'cleanup_tty; echo; exit 130' INT
-
-pause() {
-  local label="${1:-next}" key=""
-  if [[ -n "${AUTO}" ]]; then sleep "${AUTO}"; return; fi
-  printf '\n  %s⏎ %s%s' "${DIM}" "${label}" "${RST}"
-  read -rsn1 key </dev/tty || true
-  printf '\r%*s\r' "${COLS}" ''
-  if [[ "${key}" == q ]]; then echo "  bye"; exit 0; fi
-}
-
-typeout() {
-  local text="$1" i
-  if [[ -n "${AUTO}" || -n "${DEMO_NO_TYPING:-}" ]]; then printf '%s' "${text}"; return; fi
-  for ((i = 0; i < ${#text}; i++)); do printf '%s' "${text:i:1}"; sleep 0.008; done
-}
 
 step() {
   local n="$1" title="$2" dots="" i
@@ -122,33 +98,6 @@ step() {
   printf '  %s%s\n' "${dots}" "${RST}"
   hr "${ACC}"
   echo
-}
-
-say() { printf '  %s▌%s %s\n' "${ACC}" "${RST}" "$*"; }
-
-takeaway() { printf '\n  %s%s✔ %s%s\n' "${GRN}" "${B}" "$*" "${RST}"; }
-
-# run "<command>": show it, wait for a key, run it, indent its output.
-run() {
-  local cmd="$1"
-  echo
-  printf '  %s❯%s %s' "${GRN}" "${RST}" "${CYN}"
-  typeout "${cmd}"
-  printf '%s' "${RST}"
-  pause run
-  printf '\n'
-  eval "${cmd}" 2>&1 | sed 's/^/    /' || true
-}
-
-spin() {
-  local message="$1" pid="$2" frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' i=0
-  tput civis 2>/dev/null || true
-  while kill -0 "${pid}" 2>/dev/null; do
-    printf '\r  %s%s%s %s' "${ACC}" "${frames:i++%10:1}" "${RST}" "${message}"
-    sleep 0.1
-  done
-  tput cnorm 2>/dev/null || true
-  printf '\r%*s\r' "${COLS}" ''
 }
 
 # ── commands the audience sees ───────────────────────────────────────────────
@@ -335,15 +284,14 @@ provider_refusal() {
 # Show a policy file, marking lines that are new since the previous one.
 show_policy() {
   local file="$1" previous="${2:-}" line
-  echo
-  printf '  %s❯%s %s' "${GRN}" "${RST}" "${CYN}"
-  typeout "cat ${file}"
-  printf '%s\n' "${RST}"
+  prompt_cmd "cat ${file}"
+  printf '\n'
   while IFS= read -r line; do
     local gutter="  "
     if [[ -n "${previous}" ]] && ! grep -qxF -- "${line}" "${previous}"; then gutter="${GRN}▍${RST} "; fi
     printf '    %s%s\n' "${gutter}" "$(sed -E "s/: (.+)$/: ${YLW}\1${RST}/; s/^( *- )([^:]+)$/\1${YLW}\2${RST}/; s/^( *-? *)([A-Za-z]+):/\1${CYN}\2${RST}:/" <<<"${line}")"
   done <"${file}"
+  after_output
 }
 
 # Swap the Actor's policy. The previous one is deleted quietly first, because
