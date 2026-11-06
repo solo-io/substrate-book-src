@@ -100,6 +100,17 @@ jwtProviders:
 EOF
 )" --dry-run=client -o yaml | kube apply -f -
 
+# atelet is a separate release, installed and upgraded before the substrate
+# release. Its node object-store plugin uses the substrate chart's bundled RustFS
+# with that chart's default lab credentials (rustfs.accessKey/secretKey).
+kube create secret generic rustfs-credentials -n ate-system \
+  --from-literal=AWS_ACCESS_KEY_ID=rustfsadmin --from-literal=AWS_SECRET_ACCESS_KEY=rustfsadmin \
+  --dry-run=client -o yaml | kube apply -f -
+helm upgrade --install substrate-atelet "${SUBSTRATE_CHART_DIR}/substrate-atelet-${SUBSTRATE_CHART_VERSION}.tgz" \
+  --kube-context "${KUBECTL_CONTEXT}" --namespace ate-system \
+  -f "${BOOK_EXAMPLES_ROOT}/manifests/substrate-values.yaml" \
+  --post-renderer "${BOOK_EXAMPLES_ROOT}/scripts/pin-images.sh" --wait --timeout 10m
+
 helm upgrade --install substrate "${SUBSTRATE_CHART_DIR}/substrate-${SUBSTRATE_CHART_VERSION}.tgz" \
   --kube-context "${KUBECTL_CONTEXT}" --namespace ate-system \
   -f "${BOOK_EXAMPLES_ROOT}/manifests/substrate-values.yaml" \
@@ -139,11 +150,18 @@ if ! jq -e --arg image "${idp_image}" '
   exit 1
 fi
 atelet_daemonset="$(kube get daemonset/atelet -n ate-system -o json)"
-if ! jq -e --arg image "${objectstore_plugin_image}" '
+atelet_image="$(locked_image "ghcr.io/kagent-dev/substrate/atelet:${SUBSTRATE_VERSION}")"
+if ! jq -e '.metadata.annotations["meta.helm.sh/release-name"] == "substrate-atelet"' \
+    <<<"${atelet_daemonset}" >/dev/null; then
+  echo "error: atelet is not managed by the substrate-atelet release" >&2
+  exit 1
+fi
+if ! jq -e --arg image "${objectstore_plugin_image}" --arg atelet "${atelet_image}" '
   any(.spec.template.spec.initContainers[];
-      .name == "objectstore-plugin" and .restartPolicy == "Always" and .image == $image)
+      .name == "objectstore-plugin" and .restartPolicy == "Always" and .image == $image) and
+  any(.spec.template.spec.containers[]; .name == "atelet" and .image == $atelet)
 ' <<<"${atelet_daemonset}" >/dev/null; then
-  echo "error: atelet does not use the locked object-store node provider" >&2
+  echo "error: atelet does not use the locked atelet image and object-store node provider" >&2
   exit 1
 fi
 

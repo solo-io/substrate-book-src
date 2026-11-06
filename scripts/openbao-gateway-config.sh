@@ -5,7 +5,7 @@
 # default provider) after the bundled "k8s.io" provider in each
 # credentialProviders list.
 #
-# TEMPORARY BRIDGE. The released v1.0.0-rc1 chart renders only the k8s.io
+# TEMPORARY BRIDGE. The released v1.0.0 chart renders only the k8s.io
 # provider and has no value for another one, so setup-openbao.sh patches the
 # rendered ConfigMap with this filter. Any later `helm upgrade` renders the
 # ConfigMap again and drops the entry; prep-openbao-demo.sh reapplies it. Once a

@@ -4,7 +4,7 @@ The steps to present `./scripts/live-demo.sh --broker openbao`: the credential b
 
 ## Before you start
 
-- A book lab installed with `./scripts/setup-kind.sh`. These steps use `book-v100-rc1`. Every script targets `KIND_CLUSTER_NAME` with `--context` and never changes your current kube context. `live-demo.sh` defaults to `book-v060-cred`, so always set it.
+- A book lab installed with `./scripts/setup-kind.sh`. These steps use `book-v100`. Every script targets `KIND_CLUSTER_NAME` with `--context` and never changes your current kube context. `live-demo.sh` defaults to `book-v060-cred`, so always set it.
 - The OpenBao provider's source at `../credprovider-openbao`, checked out at the commit `OPENBAO_PROVIDER_COMMIT` in `scripts/lib.sh` names. Setup builds the provider from that checkout and fails if its `HEAD` differs.
 - `kubectl`, `helm`, `jq`, `git`, `go`, `docker`, `openssl`, and `shasum`.
 - tmux, for the pane that shows what each request carried when it reached the git server. Without tmux the demo still runs, without that pane.
@@ -14,7 +14,7 @@ Open the tmux session first, then set the lab and run everything from `book-src`
 ```shell
 tmux new -s demo        # or attach to the session you will present from
 cd ~/go/src/github.com/agent-substrate/book-src
-export KIND_CLUSTER_NAME=book-v100-rc1
+export KIND_CLUSTER_NAME=book-v100
 ```
 
 Set the variable inside tmux, not before `tmux new`. When a tmux server is already running, a new session's shell starts from the server's environment, not from the shell you typed `tmux new` in, so a variable exported beforehand is gone. The demo's title card names the lab it targets; if it says `lab kind-book-v060-cred`, the variable is not set in this shell.

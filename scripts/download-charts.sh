@@ -9,7 +9,7 @@ mkdir -p "${SUBSTRATE_CHART_DIR}"
 work="$(mktemp -d "${SUBSTRATE_CHART_DIR}/download.XXXXXX")"
 trap 'rm -rf "${work}"' EXIT
 
-for chart in substrate-crds substrate-podcert substrate; do
+for chart in substrate-crds substrate-podcert substrate-atelet substrate; do
   archive="${chart}-${SUBSTRATE_CHART_VERSION}.tgz"
   destination="${SUBSTRATE_CHART_DIR}/${archive}"
   expected="$(jq -er --arg chart "${chart}" '.charts[$chart].sha256' "${SUBSTRATE_RUNTIME_LOCK}")"

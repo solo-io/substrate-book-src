@@ -1,9 +1,25 @@
 # Published Substrate charts already use the public kagent-dev images.
 # scripts/pin-images.sh replaces chart image tags with runtime-lock.json digests.
-# This override lets development demo images use the local kind registry.
+# setup-kind.sh passes this file to both the substrate-atelet and substrate
+# releases; each chart reads only the keys it knows.
+
+# atelet is its own release (the substrate-atelet chart), installed before the
+# substrate release so it can be upgraded first. The substrate chart's bundled
+# atelet is deprecated.
 atelet:
+  enabled: false
+  # Lets development demo images use the local kind registry.
   extraArgs:
   - --localhost-registry-replacement=kind-registry:5000
+
+# substrate-atelet: snapshots go to the substrate release's bundled RustFS.
+# setup-kind.sh creates the rustfs-credentials Secret from the chart's default
+# lab credentials.
+objectStore:
+  endpoint: http://rustfs.ate-system.svc:9000
+  region: us-east-1
+  pathStyle: true
+  credentialsSecret: rustfs-credentials
 
 # The platform operator's grant for credential brokering: Actors in the
 # book-workbench Atespace may have Secrets from the workbench-secrets namespace
@@ -23,6 +39,12 @@ postgres:
 
 # The router accepts only mTLS clients listed here; the web application
 # presents its Pod identity. Any listed client may reach any Actor.
+#
+# The release parks a request for a suspended Actor for up to 60 seconds. The
+# lab shortens that to 5 seconds so Chapter 4's capacity example returns its 503
+# quickly.
 atenetRouter:
+  requestParking:
+    budget: 5s
   ingressAllowedSPIFFEIDs:
   - spiffe://cluster.local/ns/book-workbench/sa/repo-workbench-webapp

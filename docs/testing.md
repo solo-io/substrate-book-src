@@ -4,9 +4,9 @@ The full-lab target environments are macOS with Docker, Linux with Docker, and W
 
 `scripts/runtime-lock.json` records the chart package checksums, their OCI manifest digests for reference, and the platform image index digests. Setup verifies chart archives before installation and uses `scripts/pin-images.sh` as the Helm post-renderer to enforce the image lock. These index digests retain AMD64 and ARM64 selection. The deployed verifier checks the API server's exact locked image reference.
 
-When upgrading the runtime, update the version, all four CLI checksums, all three chart package checksums and OCI digests, and the release image digests together. Resolve image tags to their multi-platform index digests, download the charts to compute the archive checksums, then render the charts with the post-renderer and run the disposable lab suite. Chart checksum failures and unknown rendered images must be resolved explicitly rather than bypassed.
+When upgrading the runtime, update the version, all four CLI checksums, all four chart package checksums and OCI digests, and the release image digests together. Resolve image tags to their multi-platform index digests, download the charts to compute the archive checksums, then render the charts with the post-renderer and run the disposable lab suite. Chart checksum failures and unknown rendered images must be resolved explicitly rather than bypassed.
 
-The v1.0.0-rc1 setup has a strict dependency order: CRDs, three CA pools, the separate certificate-controller release, its live trust bundles, PostgreSQL, the owner/read-write roles and connection Secrets, application authentication, and finally the main chart. A later failure can hide the first bootstrap problem, so collect diagnostics before rerunning over a partial installation. The lab targets fresh clusters; it does not migrate Actors, snapshots, or PostgreSQL data from an earlier build.
+The v1.0.0 setup has a strict dependency order: CRDs, three CA pools, the separate certificate-controller release, its live trust bundles, PostgreSQL, the owner/read-write roles and connection Secrets, application authentication, the separate `substrate-atelet` release and its RustFS credentials Secret, and finally the main chart with `atelet.enabled=false`. A later failure can hide the first bootstrap problem, so collect diagnostics before rerunning over a partial installation. The lab targets fresh clusters; it does not migrate Actors, snapshots, or PostgreSQL data from an earlier build.
 
 ## One command for a disposable lab
 
@@ -52,7 +52,7 @@ After checking the browser, stop the port-forward and clean up in that same shel
 
 Both deployed verifiers require an empty `book-workbench` Atespace. The full runner invokes only the stateful Chapter 3–6 suite; `verify-example.sh` remains available as a shorter standalone smoke test. The chapter suite allows only the original `repo-workbench` template and its generated golden Tag; it rejects any additional templates or Tags. Its explicit flag acknowledges that it deletes the test Worker's Pod. Use it only on a disposable kind lab.
 
-The parking-success check uses a test-only 30-second budget, which separates the handoff behavior from host restore speed. It first checks a timeout with the chart's default budget, then restores the router's original configuration after checking a successful original request. This does not change the reader setup's budget.
+The parking-success check uses a test-only 30-second budget, which separates the handoff behavior from host restore speed. It first checks a timeout with the lab's 5-second budget (`manifests/substrate-values.yaml`; the release default is 60 seconds), then restores the router's original configuration after checking a successful original request. This does not change the reader setup's budget.
 
 ## Linux CI
 
@@ -102,4 +102,4 @@ This configuration has no private-registry credentials. It leaves the existing D
 
 The API suite does not exercise DOM controls. For each supported host, open the deployed workbench and check New run, Next step, the repaired file and Git diff, suspend/resume, the agent report, passing tests, and Actor deletion. Record the actual browser and where the application was hosted.
 
-The companion's publish action exercises cleartext HTTP egress, credential injection, and Actor JWT delivery against the in-cluster source-control service. HTTPS interception and the Actor-side interception trust bundle still need a separate egress fixture. Linux/WSL2, ARM64, and GitHub-hosted Linux runs are deferred until the final release candidate rather than repeated for every interim alpha.
+The companion's publish action exercises cleartext HTTP egress, credential injection, and Actor JWT delivery against the in-cluster source-control service. HTTPS interception and the Actor-side interception trust bundle still need a separate egress fixture. Linux/WSL2, ARM64, and GitHub-hosted Linux runs were not part of the v1.0.0 validation and remain separate coverage surfaces.

@@ -28,15 +28,17 @@ class VerificationTest(unittest.TestCase):
         })
 
     def test_customized_router_is_rejected_before_test_changes(self):
-        with self.assertRaisesRegex(RuntimeError, "default parking"):
-            verify_chapters.configured_parking("substrateIngress:\n  requestParking:\n    budget: 15s\n", "30s")
+        with self.assertRaisesRegex(RuntimeError, "lab's 5s parking"):
+            verify_chapters.configured_parking("substrateIngress:\n  requestParking:\n    budget: \"15s\"\n", "30s")
+        with self.assertRaisesRegex(RuntimeError, "lab's 5s parking"):
+            verify_chapters.configured_parking("substrateIngress:\n  host: api\n", "30s")
 
     def test_temporary_budget_preserves_other_routes_and_indentation(self):
-        original = "policies:\n  substrateIngress:\n    host: api\nother:\n  keep: true\n"
+        original = ('policies:\n  substrateIngress:\n    host: api\n    requestParking:\n'
+                    '      budget: "5s"\n    connectTargetPort: 8443\nother:\n  keep: true\n')
         changed = verify_chapters.configured_parking(original, "30s")
-        self.assertIn("  substrateIngress:\n    requestParking:\n      budget: 30s\n    host: api", changed)
-        self.assertTrue(changed.endswith("other:\n  keep: true\n"))
-        self.assertNotIn("requestParking", original)
+        self.assertEqual(changed, original.replace('budget: "5s"', 'budget: "30s"'))
+        self.assertIn('budget: "5s"', original)
 
     def test_explicit_resume_uses_the_lab_cli_context(self):
         with patch.object(verify_deployed, "run_command") as command:

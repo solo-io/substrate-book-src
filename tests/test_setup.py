@@ -171,6 +171,8 @@ exit 1
             'wait_for_trust_bundle "${signer}"',
             '"${BOOK_EXAMPLES_ROOT}/scripts/setup-postgres.sh"',
             "make-jwt-pool",
+            "kube create secret generic rustfs-credentials",
+            "helm upgrade --install substrate-atelet",
             "helm upgrade --install substrate ",
         ]
         positions = [setup.index(marker) for marker in markers]
@@ -267,7 +269,7 @@ esac
 
 
 class OpenBaoDemoTest(unittest.TestCase):
-    # Two credentialProviders lists, as the v1.0.0-rc1 chart renders them.
+    # Two credentialProviders lists, as the v1.0.0 chart renders them.
     GATEWAY_CONFIG = """binds:
 - listeners:
   - protocol: HTTPS

@@ -104,11 +104,10 @@ def snapshot_files(value):
 
 
 def configured_parking(config, budget):
-    lab.check("requestParking:" not in config, "test requires the chart's default parking configuration")
-    modified, count = re.subn(r"^(\s*)substrateIngress:\n",
-                             lambda m: f"{m[1]}substrateIngress:\n{m[1]}  requestParking:\n{m[1]}    budget: {budget}\n",
-                             config, flags=re.MULTILINE)
-    lab.check(count > 0, "no Substrate ingress policies in router config")
+    """Replace the lab's 5s parking budget (substrate-values.yaml) with a test-only budget."""
+    modified, count = re.subn(r'^(\s*requestParking:\n\s*budget:\s*)"?5s"?[ \t]*$',
+                             lambda m: f'{m[1]}"{budget}"', config, flags=re.MULTILINE)
+    lab.check(count == 1, "test requires the lab's 5s parking budget in the router config")
     return modified
 
 
@@ -270,7 +269,7 @@ def verify_capacity(first, second):
     lab.request(f"/api/actors/{second}/state", status=503)
     lab.check(lab.actor(second)["status"]["state"] == "ACTOR_STATE_SUSPENDED",
               "capacity timeout assigned the second Actor")
-    print("PASS: Chapter 4 direct resume exhausts capacity; default parked request returns 503", flush=True)
+    print("PASS: Chapter 4 direct resume exhausts capacity; parked request returns 503 after the lab's 5s budget", flush=True)
 
     # A longer test-only budget separates parking behavior from host restore speed.
     config = lab.kube("get", "configmap/atenet-router-agentgateway-config", "-n", "ate-system", "-o", "json")["data"]["config.yaml"]

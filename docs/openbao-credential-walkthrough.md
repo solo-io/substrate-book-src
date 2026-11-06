@@ -15,7 +15,7 @@ Install the broker once per lab. Setup upgrades the `substrate` release with `ma
 
 ```shell
 cd ~/go/src/github.com/agent-substrate/book-src
-export KIND_CLUSTER_NAME=book-v100-rc1
+export KIND_CLUSTER_NAME=book-v100
 ./scripts/setup-openbao.sh
 ./scripts/prep-openbao-demo.sh
 source ./scripts/demo-env.sh
